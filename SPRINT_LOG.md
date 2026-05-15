@@ -23,9 +23,9 @@
 | 4 ENVIRONMENT 填实 | PASS | Python / pytest / imports / pip check passed |
 | 5 requirements 锁定 | PASS | requirements.txt 5 行核心依赖，全部 ==，torch 保留 +cpu |
 | 6 SPRINT_LOG 创建 | PASS | 本文件 |
-| 7 whitelist audit | PENDING | 由 Codex 填入 requirements vs 白名单交叉审计差异 |
-| 8 reference_excerpts ltsf_data_loader.py | PENDING | 由 Codex 填入 Reference excerpts |
-| 9 atomic commit | PENDING | 由 Codex 填入 Atomic commits |
+| 7 whitelist audit | PASS | requirements 5 个核心依赖均在 AGENTS.md §6.1 白名单或 tests scope |
+| 8 reference_excerpts ltsf_data_loader.py | PASS | vendored from local LTSF-Linear data_provider/data_loader.py |
+| 9 atomic commit | PASS | Gate 9 commit created by Codex session; hash not written back |
 
 ## 当前 git 状态
 
@@ -33,20 +33,32 @@
 - 当前分支：待确认
 - 与 origin：待确认
 
-## requirements vs 白名单交叉审计差异 / Requirements whitelist audit
+## Requirements whitelist audit
 
-待 Gate 7 填写（Codex）。
+审计日期：2026-05-15
+判据：AGENTS.md §6.1 依赖白名单
 
-- requirements 有但第三方白名单无：待填写
-- 第三方白名单有但 requirements 无：待填写
+| Package | Version | Status | Source in AGENTS §6.1 |
+|---|---|---|---|
+| torch | 2.12.0+cpu | allowed | "torch、torch.nn、torch.optim、torch.utils.data" |
+| numpy | 1.26.4 | allowed | "numpy、pandas" |
+| pandas | 2.2.2 | allowed | "numpy、pandas" |
+| scikit-learn | 1.4.2 | allowed | "sklearn.preprocessing、sklearn.metrics、sklearn.dummy、sklearn.base" |
+| pytest | 8.3.5 | allowed (tests scope) | "tests/：可用 tempfile、pytest fixture" |
+
+差异:
+- requirements 有但白名单未列：无
+- 白名单允许但 requirements 未列：无（核心第三方依赖均已列；`pandas.api.types` 由 pandas 提供，`sklearn.*` 由 scikit-learn 提供）
+
+结论：PASS
 
 ## Reference excerpts
 
-待 Gate 8 填写（Codex）。
-
-- reference_excerpts/ltsf_data_loader.py：待确认
-- reference_excerpts/pytorch_tcn_core.py：Phase 1B 前再 vendor，MVP 不阻塞
-- reference_excerpts/ltsf_dlinear_model.py：Phase 1B 前再 vendor，MVP 不阻塞
+| File | Status | Source commit | License | Note |
+|---|---|---|---|---|
+| ltsf_data_loader.py | vendored | 0c113668a3b88c4c4ee586b8c5ec3e539c4de5a6 | Apache-2.0 | MVP 用 |
+| pytorch_tcn_core.py | deferred | n/a | n/a | Phase 1B 启动前再补 |
+| ltsf_dlinear_model.py | deferred | n/a | n/a | Phase 1B 启动前再补 |
 
 ## 进行中 session 注意事项
 
@@ -66,4 +78,4 @@
 | Commit | Gate range | Owner | Commit hash | Message |
 |---|---|---|---|---|
 | C1 | 0-6 | user manual | 待 Gate 0-6 commit 后生成 | chore(gate): apply Gate 0-6 sprint contract updates |
-| C2 | 7-9 | Codex session | 待 Codex 在 Gate 9 完成自身 commit 后回填 | chore(gate): complete Gate 7-9 reference audit and sprint log |
+| C2 | 7-9 | Codex session | 不回填（按 Gate 9 规则，用 git log --oneline -1 验证） | chore(gate): land Gate 7-9 (whitelist audit + ltsf_data_loader vendor) for hf_stock_clf v4.1 |

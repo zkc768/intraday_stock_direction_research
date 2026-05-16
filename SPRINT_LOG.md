@@ -108,6 +108,11 @@
 - W4.B.1 window boundary tests cover split-boundary invalid markers, cross-trading-day horizon invalid markers, no cross-day input windows, skipping NaN label starts, tensor shape/dtype, stride behavior, invalid stride
 - W4.B.1 validation evidence: `pytest --collect-only` collected 63 items
 - W4.B.1 explicit non-actions: No full pytest was run; No production code was modified; `ml_utils/dataset.py` was not created or modified; `tests/conftest.py` was not modified; `pytest.ini` was not modified; No git push was run
+- W4.B.1 label indexing clarification commit: `68923e1 test: clarify W4.B.1 label future-return indexing`
+- W4.B.1 clarified convention: label at row t uses returns from t->t+1 through t+k-1->t+k
+- W4.B.1 NaN convention: final k labels are NaN
+- W4.B.1 rejected convention: do not use indexing that creates k+1 trailing NaN labels
+- W4.B.1 clarification explicit non-actions: no production code modified; `ml_utils/dataset.py` still not implemented; no full pytest was run; no git push
 - 当前阶段为 W4.B.2 dataset-impl ready，下一步是 W4.B.2 dataset-impl（计划表拆分为 W4.B.2a-c）
 - 下一步只允许实现 `ml_utils/dataset.py`
 - 三个 dataset 测试文件只读，不允许修改

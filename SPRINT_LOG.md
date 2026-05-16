@@ -4,10 +4,10 @@
 
 ## 当前状态
 
-最近完成:     W3.2 seed-impl
-当前阶段:     W4.1 metrics-test ready
-下一步:       W4.1 metrics-test
-备注:         下一步只允许创建 tests/test_metrics.py；不允许实现 ml_utils/metrics.py
+最近完成:     W4.1 metrics-test
+当前阶段:     W4.2 metrics-impl ready
+下一步:       W4.2 metrics-impl
+备注:         当前只允许实现 ml_utils/metrics.py；tests/test_metrics.py 只读，不允许修改
 ## 已合并模块清单（Codex 可以安全 import）
 
 - `ml_utils/config.py`
@@ -42,6 +42,7 @@
 | W3.2 seed-impl | READY | 当前只允许实现 ml_utils/seed.py；tests/test_seed.py 只读，不允许修改 |
 | W3.2 seed-impl | PASS | commit `db0baf3`; created `ml_utils/seed.py`; implemented `seed_everything`; `tests/test_seed.py` passed 5/5; `tests/test_config.py tests/test_seed.py` passed 31/31 |
 | W3.3 seed-review | PASS | Fresh review found no implementation issues; final status recovery restored clean scope before commit |
+| W4.1 metrics-test | PASS | commit `092331d`; created `tests/test_metrics.py`; lazy import used; metrics collect-only collected 10 tests; config+seed+metrics collect-only collected 41 tests; `ml_utils/metrics.py` not created |
 ## 当前 git 状态
 
 记录 W3.2 seed-impl 后，预期本次 docs/log step 只修改 `SPRINT_LOG.md`。

@@ -6,22 +6,23 @@ import pytest
 def test_label_formula_matches_hand_computed_future_average_return():
     from ml_utils.dataset import make_binary_labels_from_future_avg_return
 
-    df = pd.DataFrame({"close": [100.0, 110.0, 99.0, 108.9, 98.01, 107.811]})
+    df = pd.DataFrame({"close": [100.0, 110.0, 121.0, 108.9, 98.01, 107.811]})
 
     result = make_binary_labels_from_future_avg_return(df, price_col="close", k=2)
 
     returns = df["close"].pct_change().shift(-1)
+    # For k=2, row t uses the returns t->t+1 and t+1->t+2.
     expected_future_avg = pd.Series(
         [
+            np.mean([returns.iloc[0], returns.iloc[1]]),
             np.mean([returns.iloc[1], returns.iloc[2]]),
             np.mean([returns.iloc[2], returns.iloc[3]]),
             np.mean([returns.iloc[3], returns.iloc[4]]),
             np.nan,
             np.nan,
-            np.nan,
         ]
     )
-    expected_labels = pd.Series([0.0, 1.0, 0.0, np.nan, np.nan, np.nan], name="label")
+    expected_labels = pd.Series([1.0, 0.0, 0.0, 0.0, np.nan, np.nan], name="label")
 
     np.testing.assert_allclose(
         result["future_avg_r"].to_numpy(),
@@ -31,6 +32,9 @@ def test_label_formula_matches_hand_computed_future_average_return():
         equal_nan=True,
     )
     pd.testing.assert_series_equal(result["label"], expected_labels)
+    assert len(result) == len(df)
+    assert result["label"].tail(2).isna().all()
+    assert not result["label"].iloc[:-2].isna().any()
 
 
 def test_zero_future_average_return_maps_to_non_up_class_zero():

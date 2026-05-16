@@ -1,18 +1,19 @@
 # SPRINT_LOG.md — hf_stock_clf / ml_utils
 
-最近更新：2026-05-15
+最近更新：2026-05-16
 
 ## 当前状态
 
-最近完成:     W4.B.1 dataset-test
-当前阶段:     W4.B.2 dataset-impl ready
-下一步:       W4.B.2 dataset-impl
-备注:         下一步只允许实现 ml_utils/dataset.py；三个 dataset 测试文件只读，不允许修改
+最近完成:     W4.B.2 dataset-impl
+当前阶段:     W4.B.2 dataset-impl log update
+下一步:       return to ChatGPT for review and decide next authorized workstream
+备注:         不要声称已进入下一个模块；本次只记录 W4.B.2 dataset implementation commit
 ## 已合并模块清单（Codex 可以安全 import）
 
 - `ml_utils/config.py`
 - `ml_utils/seed.py`
 - `ml_utils/metrics.py`
+- `ml_utils/dataset.py`
 
 ## Gate status
 
@@ -46,9 +47,10 @@
 | W4.2 metrics-impl | PASS | commit `53b8398`; `ml_utils/metrics.py`; `tests/test_metrics.py` 10 passed; config+seed+metrics regression 41 passed; No SPRINT_LOG.md edits were made during W4.2 finalization; No git push was run |
 | W4.3 metrics-review | PASS | fresh review found no BLOCKER / WARNING / NIT |
 | W4.B.1 dataset-test | PASS | commit `ceb7969`; added dataset leakage, label generation, and window boundary tests; `pytest --collect-only` collected 63 items; no production code modified |
+| W4.B.2 dataset-impl | PASS | commit `9466d05`; `ml_utils/dataset.py`; implemented label generation, chronological splits, train-only scaling, split/day boundary invalid marking, and per-ticker window dataset; targeted finalization tests passed; collect-only collected 63 tests |
 ## 当前 git 状态
 
-记录 W4.B.1 dataset-test 后，预期本次 docs/log step 只修改 `SPRINT_LOG.md`。
+记录 W4.B.2 dataset implementation 后，预期本次 docs/log step 只修改 `SPRINT_LOG.md`。
 
 - 工作目录干净：待 Gate 0-6 commit 后确认
 - 当前分支：待确认
@@ -118,9 +120,44 @@
 - W4.B.1 formula test adjustment: formula test data was moved away from zero-boundary artifacts; positive / negative labels are now unambiguous; zero boundary is tested only in the dedicated zero-boundary test
 - W4.B.1 zero-boundary validation evidence: `tests/test_label_generation.py --collect-only` collected 7 tests; full collect-only collected 63 tests
 - W4.B.1 zero-boundary explicit non-actions: no production code modified; `ml_utils/dataset.py` still not implemented; no full pytest was run; no git push
-- 当前阶段为 W4.B.2 dataset-impl ready，下一步是 W4.B.2 dataset-impl（计划表拆分为 W4.B.2a-c）
-- 下一步只允许实现 `ml_utils/dataset.py`
-- 三个 dataset 测试文件只读，不允许修改
+- W4.B.2 dataset implementation commit: `9466d05 feat(dataset): add W4.B.2 dataset implementation`
+- W4.B.2 files changed: `ml_utils/dataset.py`
+- W4.B.2 public API implemented: `make_binary_labels_from_future_avg_return`, `make_time_splits`, `fit_scaler_on_train`, `transform_split`, `trim_labels_at_split_boundary`, `WindowedClassificationDataset`
+- W4.B.2 label convention: label at row t uses future k bar-to-bar returns from t->t+1 through t+k-1->t+k
+- W4.B.2 label formula uses arithmetic mean only
+- W4.B.2 exact zero future average return maps to class 0
+- W4.B.2 final k rows remain NaN; no fill/drop
+- W4.B.2 split behavior: chronological train/val/test split
+- W4.B.2 scaler behavior: scaler fit uses train split only
+- W4.B.2 transform behavior: `transform_split` returns a new DataFrame
+- W4.B.2 split-boundary invalid labels are marked with NaN, not deleted
+- W4.B.2 window behavior: no cross-ticker windows
+- W4.B.2 window behavior: no cross-trading-day input windows
+- W4.B.2 label horizon behavior: no cross-trading-day label horizons
+- W4.B.2 validation behavior: duplicate timestamps rejected
+- W4.B.2 timezone behavior: `timezone_policy` supports `"naive"` and `"utc"`
+- W4.B.2 trim behavior: `trim_labels_at_split_boundary` uses explicit `label_col`, no binary-column scanning
+- W4.B.3 initial review failed with 4 warnings: duplicate timestamp validation, timezone policy, unsafe label inference, trim ordering
+- W4.B.2-fix addressed all 4 W4.B.3 review warnings
+- W4.B.3 re-review PASS
+- W4.B.3 remaining NITs only: future test coverage for unsorted/duplicate trim and `timezone_policy="utc"`
+- W4.B.2 finalization validation evidence: `tests/test_label_generation.py`: 7 passed
+- W4.B.2 finalization validation evidence: `tests/test_dataset_leakage.py`: 7 passed
+- W4.B.2 finalization validation evidence: `tests/test_window_boundaries.py`: 8 passed
+- W4.B.2 finalization validation evidence: `tests/test_config.py tests/test_seed.py tests/test_metrics.py`: 41 passed
+- W4.B.2 finalization validation evidence: collect-only collected 63 tests
+- W4.B.2 finalization details: commit `9466d05 feat(dataset): add W4.B.2 dataset implementation`
+- W4.B.2 finalization details: commit stat `ml_utils/dataset.py | 318 insertions`
+- W4.B.2 finalization details: `git diff --cached --check` had no output
+- W4.B.2 finalization details: post-commit working tree clean
+- W4.B.2 explicit non-actions: no tests modified
+- W4.B.2 explicit non-actions: no SPRINT_LOG update was included in implementation commit
+- W4.B.2 explicit non-actions: no full pytest was run
+- W4.B.2 explicit non-actions: no git push
+- W4.B.2 explicit non-actions: no files besides `ml_utils/dataset.py` committed
+- W4.B.2 finalization retry cleanup: generated `__pycache__` files were cleaned during finalization retry only
+- 当前阶段为 W4.B.2 dataset-impl log update
+- 下一步是 return to ChatGPT for review and decide next authorized workstream
 
 ## Atomic commits
 

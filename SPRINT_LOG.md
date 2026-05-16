@@ -113,6 +113,11 @@
 - W4.B.1 NaN convention: final k labels are NaN
 - W4.B.1 rejected convention: do not use indexing that creates k+1 trailing NaN labels
 - W4.B.1 clarification explicit non-actions: no production code modified; `ml_utils/dataset.py` still not implemented; no full pytest was run; no git push
+- W4.B.1 zero-boundary test data fix commit: `fa2709b test: fix W4.B.1 zero-boundary label data`
+- W4.B.1 zero-boundary fix summary: `test_zero_future_average_return_maps_to_non_up_class_zero` now uses prices `[100.0, 125.0, 93.75, 100.0]`; for k=2, returns are `+0.25` and `-0.25`, `future_avg = 0.0`, and exact zero maps to class 0
+- W4.B.1 formula test adjustment: formula test data was moved away from zero-boundary artifacts; positive / negative labels are now unambiguous; zero boundary is tested only in the dedicated zero-boundary test
+- W4.B.1 zero-boundary validation evidence: `tests/test_label_generation.py --collect-only` collected 7 tests; full collect-only collected 63 tests
+- W4.B.1 zero-boundary explicit non-actions: no production code modified; `ml_utils/dataset.py` still not implemented; no full pytest was run; no git push
 - 当前阶段为 W4.B.2 dataset-impl ready，下一步是 W4.B.2 dataset-impl（计划表拆分为 W4.B.2a-c）
 - 下一步只允许实现 `ml_utils/dataset.py`
 - 三个 dataset 测试文件只读，不允许修改

@@ -4,10 +4,10 @@
 
 ## 当前状态
 
-最近完成:     W2.2 config-impl
-当前阶段:     W3.1 seed-test ready
-下一步:       W3.1 seed-test
-备注:         当前只允许创建 tests/test_seed.py；不得实现 ml_utils/seed.py
+最近完成:     W3.1 seed-test
+当前阶段:     W3.2 seed-impl ready
+下一步:       W3.2 seed-impl
+备注:         当前只允许实现 ml_utils/seed.py；tests/test_seed.py 只读，不允许修改
 ## 已合并模块清单（Codex 可以安全 import）
 
 - ml_utils/config.py
@@ -37,7 +37,8 @@
 | W1.1 testing infrastructure | PASS | pytest.ini 与 tests/conftest.py 已创建；commit 249b2d8 |
 | W2.1 config-test | PASS | tests/test_config.py 已创建；commit e0773f2 |
 | W2.2 config-impl | PASS | ml_utils/config.py 已创建；commit 2945c81；tests/test_config.py 26 passed；W2.3 review PASS |
-| W3.1 seed-test | READY | 当前只允许创建 tests/test_seed.py；不得实现 ml_utils/seed.py |
+| W3.1 seed-test | PASS | tests/test_seed.py 已创建；commit 7e6b1ab；collect-only 5 tests collected；生成的 tests/__pycache__/ 已清理且未提交 |
+| W3.2 seed-impl | READY | 当前只允许实现 ml_utils/seed.py；tests/test_seed.py 只读，不允许修改 |
 
 ## 当前 git 状态
 
@@ -80,10 +81,11 @@
 - W1.1 testing infrastructure 已完成并记录 PASS
 - W2.1 config-test 已完成并记录 PASS
 - W2.2 config-impl 已完成并记录 PASS
-- 当前阶段为 W3.1 seed-test ready，下一步是 W3.1 seed-test
-- 当前只允许创建 tests/test_seed.py
-- 不允许创建或修改 ml_utils/seed.py
-- 不要声称 W3.1 已完成；tests/test_seed.py 尚未创建
+- W3.1 seed-test 已完成并记录 PASS
+- 当前阶段为 W3.2 seed-impl ready，下一步是 W3.2 seed-impl
+- 当前只允许实现 ml_utils/seed.py
+- tests/test_seed.py 只读，不允许修改
+- 不要声称 W3.2 已完成；ml_utils/seed.py 尚未创建
 
 ## Atomic commits
 

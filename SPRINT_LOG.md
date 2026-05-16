@@ -4,13 +4,14 @@
 
 ## 当前状态
 
-最近完成:     W3.1 seed-test
-当前阶段:     W3.2 seed-impl ready
-下一步:       W3.2 seed-impl
-备注:         当前只允许实现 ml_utils/seed.py；tests/test_seed.py 只读，不允许修改
+最近完成:     W3.2 seed-impl
+当前阶段:     W4.1 metrics-test ready
+下一步:       W4.1 metrics-test
+备注:         下一步只允许创建 tests/test_metrics.py；不允许实现 ml_utils/metrics.py
 ## 已合并模块清单（Codex 可以安全 import）
 
-- ml_utils/config.py
+- `ml_utils/config.py`
+- `ml_utils/seed.py`
 
 ## Gate status
 
@@ -39,8 +40,11 @@
 | W2.2 config-impl | PASS | ml_utils/config.py 已创建；commit 2945c81；tests/test_config.py 26 passed；W2.3 review PASS |
 | W3.1 seed-test | PASS | tests/test_seed.py 已创建；commit 7e6b1ab；collect-only 5 tests collected；生成的 tests/__pycache__/ 已清理且未提交 |
 | W3.2 seed-impl | READY | 当前只允许实现 ml_utils/seed.py；tests/test_seed.py 只读，不允许修改 |
-
+| W3.2 seed-impl | PASS | commit `db0baf3`; created `ml_utils/seed.py`; implemented `seed_everything`; `tests/test_seed.py` passed 5/5; `tests/test_config.py tests/test_seed.py` passed 31/31 |
+| W3.3 seed-review | PASS | Fresh review found no implementation issues; final status recovery restored clean scope before commit |
 ## 当前 git 状态
+
+记录 W3.2 seed-impl 后，预期本次 docs/log step 只修改 `SPRINT_LOG.md`。
 
 - 工作目录干净：待 Gate 0-6 commit 后确认
 - 当前分支：待确认

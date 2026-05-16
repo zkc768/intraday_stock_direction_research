@@ -4,11 +4,10 @@
 
 ## 当前状态
 
-最近完成:     W1.1 testing infrastructure
-当前阶段:     W2.1 config-test ready
-下一步:       W2.1 config-test
-备注:         当前仍禁止直接写 ml_utils production implementation；W2.1 只允许创建 tests/test_config.py
-
+最近完成:     W2.1 config-test
+当前阶段:     W2.2 config-impl ready
+下一步:       W2.2 config-impl
+备注:         当前只允许实现 ml_utils/config.py；tests/test_config.py 只读
 ## 已合并模块清单（Codex 可以安全 import）
 
 无（ml_utils 仅含 __init__.py × 2）。
@@ -36,7 +35,8 @@
 | Gate 7-9 | PASS | Gate status 表中 7-9 均为 PASS |
 | W0.1 readiness audit | PASS | readiness audit 已完成；项目可进入 §14.2 testing infrastructure |
 | W1.1 testing infrastructure | PASS | pytest.ini 与 tests/conftest.py 已创建；commit 249b2d8 |
-| W2.1 config-test | READY | 尚未创建 tests/test_config.py；本阶段只允许创建该测试文件 |
+| W2.1 config-test | PASS | tests/test_config.py 已创建；commit e0773f2 |
+| W2.2 config-impl | READY | 尚未创建 ml_utils/config.py；本阶段只允许创建该实现文件 |
 
 ## 当前 git 状态
 

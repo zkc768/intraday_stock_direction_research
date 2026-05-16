@@ -4,9 +4,10 @@
 
 ## 当前状态
 
-最近完成:     Gate 0-6（手工段）
-正在进行:     Gate 7-9（Codex 接手）
-下一步候选:   W0.1 readiness audit
+最近完成:     W0.1 readiness audit
+当前阶段:     W1.1 testing infrastructure ready
+下一步:       W1.1 testing infrastructure
+备注:         当前仍禁止直接写 ml_utils production implementation
 
 ## 已合并模块清单（Codex 可以安全 import）
 
@@ -26,6 +27,15 @@
 | 7 whitelist audit | PASS | requirements 5 个核心依赖均在 AGENTS.md §6.1 白名单或 tests scope |
 | 8 reference_excerpts ltsf_data_loader.py | PASS | vendored from local LTSF-Linear data_provider/data_loader.py |
 | 9 atomic commit | PASS | Gate 9 commit created by Codex session; hash not written back |
+
+## Workstream status
+
+| Item | Status | Evidence |
+|---|---|---|
+| Gate 0-6 | PASS | 手工段已完成 |
+| Gate 7-9 | PASS | Gate status 表中 7-9 均为 PASS |
+| W0.1 readiness audit | PASS | readiness audit 已完成；项目可进入 §14.2 testing infrastructure |
+| W1.1 testing infrastructure | READY | 尚未创建 pytest.ini 或 tests/conftest.py |
 
 ## 当前 git 状态
 
@@ -63,10 +73,12 @@
 ## 进行中 session 注意事项
 
 - Gate 0-6 已由用户手工执行
-- Gate 7-9 才允许 Codex 接手
-- 不允许启动 W0.1，直到 Gate 0-9 全部 PASS
+- Gate 7-9 已完成并记录 PASS
+- W0.1 readiness audit 已完成并记录 PASS
+- 当前阶段为 W1.1 testing infrastructure ready，下一步是 W1.1 testing infrastructure
 - 不允许创建任何 ml_utils production code
-- 不允许创建 tests/conftest.py 或 pytest.ini，直到 Gate 7-9 完成且进入 W1.1
+- 当前仍禁止直接写 ml_utils production implementation
+- 不要声称 W1.1 已完成；pytest.ini 和 tests/conftest.py 尚未创建
 
 ## Atomic commits
 

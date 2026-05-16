@@ -213,3 +213,15 @@ TODO 5 之前都不会写任何 `ml_utils/*` 代码。
 - MVP_YES / Phase 1B decision summary:
   - MVP scope is LSTM-only end-to-end.
   - TCN and DLinear are deferred to Phase 1B.
+
+---
+
+## 10. v4.2.1 hotfix — Test-first lazy import constraint
+
+- Added AGENTS.md §7.D Test-first 通用约束.
+- Narrowed AGENTS.md §7.1 future test-file rule:
+  - Unauthorized future module tests remain forbidden.
+  - Test-first sessions may create a test file only when the current prompt's `allowed_files` explicitly lists that `tests/<test_file>`.
+- Added the lazy import rule for test-first sessions:
+  - No module top-level import of an unimplemented target module.
+  - Import the target module inside a test function or local helper so collect-only can pass before implementation exists.

@@ -356,7 +356,53 @@ config 不是"装参数的盒子"，是第一道防错。
 - 修改 `requirements.txt`、`AGENTS.md`、plan v2 → 停下问
 - 修改 `tests/conftest.py` / `pytest.ini` → 不属于实现会话，由 §14.2 testing infrastructure 一次性 step 处理
 - 添加 convenience script、example、README 更新 → 停下问
-- **为尚未实现的模块写测试文件 → 禁止**。`tests/test_<future_module>.py` 在该模块的实现会话之前不许出现
+- **为未授权 future module 写测试文件 → 禁止**。只有当本会话 prompt 的 `allowed_files` 显式列出该 `tests/<test_file>` 时，才允许创建该测试文件；否则 `tests/test_<future_module>.py` 不许出现。
+
+### 7.D Test-first 通用约束
+
+本节仅适用于 **test-writing / test-first session**。
+
+本节也称为 test-first lazy import rule：test-first 测试必须通过 lazy import 确保 `pytest --collect-only` 不会在目标模块尚未实现时失败。
+
+适用场景：
+
+| Session 类型 | 是否适用 | 说明 |
+|---|---:|---|
+| test-first session | 是 | 例如 W2.1 / W3.1 / W4.A.1 / W4.B.1 / W4.C.1 / W4.D.1 / W5.1 |
+| implementation session | 否 | 目标模块已进入实现阶段，测试文件通常已存在 |
+| review session | 否 | review session 只读，不创建测试、不实现代码 |
+| log sync / docs sync session | 否 | 只改日志或文档状态，不创建测试 |
+
+在目标模块尚未实现前，测试文件不得在 module top-level import 目标模块。
+
+禁止：
+
+```python
+from ml_utils.seed import seed_everything
+import ml_utils.seed
+```
+
+允许：
+
+```python
+def test_seed_everything_sets_pythonhashseed():
+    from ml_utils.seed import seed_everything
+
+    seed_everything(123)
+```
+
+或：
+
+```python
+def _seed_everything():
+    from ml_utils.seed import seed_everything
+
+    return seed_everything
+```
+
+原因：test-first session 只要求测试文件可被 pytest collect；目标模块尚未实现时，module top-level import 会导致 collection 阶段失败，阻断先写测试、后实现的流程。
+
+一旦目标模块实现完成，implementation / review session 可按普通测试习惯 import，但仍不得绕过本会话 prompt 的 `allowed_files`。
 
 ### 7.2 无未来代码
 

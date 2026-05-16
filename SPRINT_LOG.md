@@ -4,10 +4,10 @@
 
 ## 当前状态
 
-最近完成:     W4.3 metrics-review
-当前阶段:     W4.B.1 dataset-test ready
-下一步:       W4.B.1 dataset-test
-备注:         下一步只允许创建 dataset 相关测试文件；不允许实现 ml_utils/dataset.py
+最近完成:     W4.B.1 dataset-test
+当前阶段:     W4.B.2 dataset-impl ready
+下一步:       W4.B.2 dataset-impl
+备注:         下一步只允许实现 ml_utils/dataset.py；三个 dataset 测试文件只读，不允许修改
 ## 已合并模块清单（Codex 可以安全 import）
 
 - `ml_utils/config.py`
@@ -45,9 +45,10 @@
 | W4.1 metrics-test | PASS | commit `092331d`; created `tests/test_metrics.py`; lazy import used; metrics collect-only collected 10 tests; config+seed+metrics collect-only collected 41 tests; `ml_utils/metrics.py` not created |
 | W4.2 metrics-impl | PASS | commit `53b8398`; `ml_utils/metrics.py`; `tests/test_metrics.py` 10 passed; config+seed+metrics regression 41 passed; No SPRINT_LOG.md edits were made during W4.2 finalization; No git push was run |
 | W4.3 metrics-review | PASS | fresh review found no BLOCKER / WARNING / NIT |
+| W4.B.1 dataset-test | PASS | commit `ceb7969`; added dataset leakage, label generation, and window boundary tests; `pytest --collect-only` collected 63 items; no production code modified |
 ## 当前 git 状态
 
-记录 W4.2/W4.3 后，预期本次 docs/log step 只修改 `SPRINT_LOG.md`。
+记录 W4.B.1 dataset-test 后，预期本次 docs/log step 只修改 `SPRINT_LOG.md`。
 
 - 工作目录干净：待 Gate 0-6 commit 后确认
 - 当前分支：待确认
@@ -100,9 +101,16 @@
 - W4.2 未运行 `git push`
 - W4.3 metrics-review 已完成并记录 PASS
 - W4.3 review evidence: Fresh review found no BLOCKER / WARNING / NIT
-- 当前阶段为 W4.B.1 dataset-test ready，下一步是 W4.B.1 dataset-test
-- 下一步只允许创建 dataset 相关测试文件
-- 不允许实现 ml_utils/dataset.py
+- W4.B.1 dataset-test 已完成并记录 PASS；test commit 为 `ceb7969 test: add W4.B.1 dataset tests`
+- W4.B.1 files added: `tests/test_dataset_leakage.py`, `tests/test_label_generation.py`, `tests/test_window_boundaries.py`
+- W4.B.1 label generation tests cover hand-computed future average return, zero boundary class 0, tail k NaN, row preservation, input immutability, invalid k, missing price column
+- W4.B.1 leakage tests cover chronological splits, train-only scaler statistics, transform immutability, scaler_type standard/minmax, invalid scaler_type, no cross-ticker windows
+- W4.B.1 window boundary tests cover split-boundary invalid markers, cross-trading-day horizon invalid markers, no cross-day input windows, skipping NaN label starts, tensor shape/dtype, stride behavior, invalid stride
+- W4.B.1 validation evidence: `pytest --collect-only` collected 63 items
+- W4.B.1 explicit non-actions: No full pytest was run; No production code was modified; `ml_utils/dataset.py` was not created or modified; `tests/conftest.py` was not modified; `pytest.ini` was not modified; No git push was run
+- 当前阶段为 W4.B.2 dataset-impl ready，下一步是 W4.B.2 dataset-impl（计划表拆分为 W4.B.2a-c）
+- 下一步只允许实现 `ml_utils/dataset.py`
+- 三个 dataset 测试文件只读，不允许修改
 
 ## Atomic commits
 

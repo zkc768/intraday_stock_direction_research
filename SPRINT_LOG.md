@@ -4,14 +4,15 @@
 
 ## 当前状态
 
-最近完成:     W4.1 metrics-test
-当前阶段:     W4.2 metrics-impl ready
-下一步:       W4.2 metrics-impl
-备注:         当前只允许实现 ml_utils/metrics.py；tests/test_metrics.py 只读，不允许修改
+最近完成:     W4.3 metrics-review
+当前阶段:     W4.B.1 dataset-test ready
+下一步:       W4.B.1 dataset-test
+备注:         下一步只允许创建 dataset 相关测试文件；不允许实现 ml_utils/dataset.py
 ## 已合并模块清单（Codex 可以安全 import）
 
 - `ml_utils/config.py`
 - `ml_utils/seed.py`
+- `ml_utils/metrics.py`
 
 ## Gate status
 
@@ -39,13 +40,14 @@
 | W2.1 config-test | PASS | tests/test_config.py 已创建；commit e0773f2 |
 | W2.2 config-impl | PASS | ml_utils/config.py 已创建；commit 2945c81；tests/test_config.py 26 passed；W2.3 review PASS |
 | W3.1 seed-test | PASS | tests/test_seed.py 已创建；commit 7e6b1ab；collect-only 5 tests collected；生成的 tests/__pycache__/ 已清理且未提交 |
-| W3.2 seed-impl | READY | 当前只允许实现 ml_utils/seed.py；tests/test_seed.py 只读，不允许修改 |
 | W3.2 seed-impl | PASS | commit `db0baf3`; created `ml_utils/seed.py`; implemented `seed_everything`; `tests/test_seed.py` passed 5/5; `tests/test_config.py tests/test_seed.py` passed 31/31 |
 | W3.3 seed-review | PASS | Fresh review found no implementation issues; final status recovery restored clean scope before commit |
 | W4.1 metrics-test | PASS | commit `092331d`; created `tests/test_metrics.py`; lazy import used; metrics collect-only collected 10 tests; config+seed+metrics collect-only collected 41 tests; `ml_utils/metrics.py` not created |
+| W4.2 metrics-impl | PASS | commit `53b8398`; `ml_utils/metrics.py`; `tests/test_metrics.py` 10 passed; config+seed+metrics regression 41 passed; No SPRINT_LOG.md edits were made during W4.2 finalization; No git push was run |
+| W4.3 metrics-review | PASS | fresh review found no BLOCKER / WARNING / NIT |
 ## 当前 git 状态
 
-记录 W3.2 seed-impl 后，预期本次 docs/log step 只修改 `SPRINT_LOG.md`。
+记录 W4.2/W4.3 后，预期本次 docs/log step 只修改 `SPRINT_LOG.md`。
 
 - 工作目录干净：待 Gate 0-6 commit 后确认
 - 当前分支：待确认
@@ -87,10 +89,20 @@
 - W2.1 config-test 已完成并记录 PASS
 - W2.2 config-impl 已完成并记录 PASS
 - W3.1 seed-test 已完成并记录 PASS
-- 当前阶段为 W3.2 seed-impl ready，下一步是 W3.2 seed-impl
-- 当前只允许实现 ml_utils/seed.py
-- tests/test_seed.py 只读，不允许修改
-- 不要声称 W3.2 已完成；ml_utils/seed.py 尚未创建
+- W3.2 seed-impl 已完成并记录 PASS
+- W3.3 seed-review 已完成并记录 PASS
+- W4.1 metrics-test 已完成并记录 PASS
+- W4.2 metrics-impl 已完成并记录 PASS；implementation commit 为 `53b8398 feat(metrics): add binary classification metrics`
+- W4.2 committed file 仅 `ml_utils/metrics.py`
+- W4.2 test evidence: `tests/test_metrics.py`: 10 passed
+- W4.2 regression evidence: `tests/test_config.py tests/test_seed.py tests/test_metrics.py`: 41 passed
+- W4.2 finalization 未修改 `SPRINT_LOG.md`
+- W4.2 未运行 `git push`
+- W4.3 metrics-review 已完成并记录 PASS
+- W4.3 review evidence: Fresh review found no BLOCKER / WARNING / NIT
+- 当前阶段为 W4.B.1 dataset-test ready，下一步是 W4.B.1 dataset-test
+- 下一步只允许创建 dataset 相关测试文件
+- 不允许实现 ml_utils/dataset.py
 
 ## Atomic commits
 

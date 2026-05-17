@@ -4,16 +4,17 @@
 
 ## 当前状态
 
-最近完成:     W4.C.1 checkpoint-test
-当前阶段:     W4.C.1 checkpoint-test log update
-下一步:       return to ChatGPT for review, then W4.C.2 checkpoint-impl if authorized
-备注:         不要声称已进入 W4.C.2；本次只记录 W4.C.1 checkpoint test commit
+最近完成:     W4.C.2 checkpoint-impl
+当前阶段:     W4.C.2 checkpoint-impl log update
+下一步:       return to ChatGPT for review before starting any next checkpoint review / next module step
+备注:         不要声称 trainer/model/next workstream 已开始；本次只记录 W4.C.2 checkpoint implementation commit
 ## 已合并模块清单（Codex 可以安全 import）
 
 - `ml_utils/config.py`
 - `ml_utils/seed.py`
 - `ml_utils/metrics.py`
 - `ml_utils/dataset.py`
+- `ml_utils/checkpoint.py`
 
 ## Gate status
 
@@ -49,9 +50,10 @@
 | W4.B.1 dataset-test | PASS | commit `ceb7969`; added dataset leakage, label generation, and window boundary tests; `pytest --collect-only` collected 63 items; no production code modified |
 | W4.B.2 dataset-impl | PASS | commit `9466d05`; `ml_utils/dataset.py`; implemented label generation, chronological splits, train-only scaling, split/day boundary invalid marking, and per-ticker window dataset; targeted finalization tests passed; collect-only collected 63 tests |
 | W4.C.1 checkpoint-test | PASS | commit `a46afcf`; added `tests/test_checkpoint.py`; 9 lazy-import checkpoint tests collected; full collect-only collected 72 tests; `ml_utils/checkpoint.py` not created |
+| W4.C.2 checkpoint-impl | PASS | commit `b2738ee`; `ml_utils/checkpoint.py`; implemented save/load checkpoint; `tests/test_checkpoint.py` 9 passed, 1 warning; collect-only collected 72 tests |
 ## 当前 git 状态
 
-记录 W4.C.1 checkpoint-test 后，预期本次 docs/log step 只修改 `SPRINT_LOG.md`。
+记录 W4.C.2 checkpoint implementation 后，预期本次 docs/log step 只修改 `SPRINT_LOG.md`。
 
 - 工作目录干净：待 Gate 0-6 commit 后确认
 - 当前分支：待确认
@@ -185,8 +187,37 @@
 - W4.C.1 explicit non-actions: no git push
 - W4.C.1 explicit non-actions: no `git add .`
 - W4.C.1 explicit non-actions: no `git add -A`
-- 当前阶段为 W4.C.1 checkpoint-test log update
-- 下一步是 return to ChatGPT for review, then W4.C.2 checkpoint-impl if authorized
+- W4.C.2 checkpoint implementation commit: `b2738ee feat(checkpoint): add W4.C.2 checkpoint implementation`
+- W4.C.2 files changed: `ml_utils/checkpoint.py`
+- W4.C.2 implementation summary: implemented `save_checkpoint`
+- W4.C.2 implementation summary: implemented `load_checkpoint`
+- W4.C.2 implementation summary: saves `model.state_dict` only, not full model object
+- W4.C.2 implementation summary: saves `optimizer_state_dict`
+- W4.C.2 implementation summary: saves `scheduler_state_dict` when scheduler is not None
+- W4.C.2 implementation summary: saves `epoch`
+- W4.C.2 implementation summary: saves `best_metric`
+- W4.C.2 implementation summary: saves `rng_state` keys `python`, `numpy`, `torch`, and `cuda`
+- W4.C.2 implementation summary: preserves `extra=None` roundtrip
+- W4.C.2 implementation summary: `load_checkpoint` raises explicit `FileNotFoundError` for missing path
+- W4.C.2 implementation summary: `load_checkpoint` supports `weights_only=True` by loading model weights only
+- W4.C.2 implementation summary: optimizer and scheduler restore only when `weights_only=False`
+- W4.C.2 validation evidence: `tests/test_checkpoint.py`: 9 passed, 1 warning in 2.62s
+- W4.C.2 validation evidence: all collect-only: 72 tests collected in 1.14s
+- W4.C.2 validation evidence: `git diff --check` had no output
+- W4.C.2 recovery detail: first W4.C.2 attempt stopped before commit because pytest generated untracked `ml_utils/__pycache__/` and `tests/__pycache__/`
+- W4.C.2 recovery detail: recovery deleted only `ml_utils/__pycache__/` and `tests/__pycache__/`
+- W4.C.2 recovery detail: recovery committed only `ml_utils/checkpoint.py`
+- W4.C.2 explicit non-actions: tests not modified
+- W4.C.2 explicit non-actions: `SPRINT_LOG.md` not modified during implementation session
+- W4.C.2 explicit non-actions: no other production code modified
+- W4.C.2 explicit non-actions: no full pytest run
+- W4.C.2 explicit non-actions: no git clean
+- W4.C.2 explicit non-actions: no `git add .`
+- W4.C.2 explicit non-actions: no `git add -A`
+- W4.C.2 explicit non-actions: no git push
+- W4.C.2 explicit non-actions: no `.gitignore` change
+- 当前阶段为 W4.C.2 checkpoint-impl log update
+- 下一步是 return to ChatGPT for review before starting any next checkpoint review / next module step
 
 ## Atomic commits
 

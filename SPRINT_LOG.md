@@ -4,10 +4,10 @@
 
 ## 当前状态
 
-最近完成:     W4.C.2 checkpoint-impl
-当前阶段:     W4.C.2 checkpoint-impl log update
-下一步:       return to ChatGPT for review before starting any next checkpoint review / next module step
-备注:         不要声称 trainer/model/next workstream 已开始；本次只记录 W4.C.2 checkpoint implementation commit
+最近完成:     W4.D.1 LSTM classifier tests
+当前阶段:     W4.D.1 LSTM classifier tests log update
+下一步:       return to ChatGPT for review before W4.D.2 LSTM implementation
+备注:         不要声称 W4.D.2 已开始或 LSTM implementation 已存在；本次只记录 W4.D.1 LSTM classifier test commit
 ## 已合并模块清单（Codex 可以安全 import）
 
 - `ml_utils/config.py`
@@ -51,9 +51,10 @@
 | W4.B.2 dataset-impl | PASS | commit `9466d05`; `ml_utils/dataset.py`; implemented label generation, chronological splits, train-only scaling, split/day boundary invalid marking, and per-ticker window dataset; targeted finalization tests passed; collect-only collected 63 tests |
 | W4.C.1 checkpoint-test | PASS | commit `a46afcf`; added `tests/test_checkpoint.py`; 9 lazy-import checkpoint tests collected; full collect-only collected 72 tests; `ml_utils/checkpoint.py` not created |
 | W4.C.2 checkpoint-impl | PASS | commit `b2738ee`; `ml_utils/checkpoint.py`; implemented save/load checkpoint; `tests/test_checkpoint.py` 9 passed, 1 warning; collect-only collected 72 tests |
+| W4.D.1 LSTM classifier tests | PASS | commit `702db98`; added `tests/test_models_shape.py`; 6 lazy-import LSTMClassifier tests collected; full collect-only collected 78 tests; `ml_utils/models/lstm_classifier.py` not created |
 ## 当前 git 状态
 
-记录 W4.C.2 checkpoint implementation 后，预期本次 docs/log step 只修改 `SPRINT_LOG.md`。
+记录 W4.D.1 LSTM classifier tests 后，预期本次 docs/log step 只修改 `SPRINT_LOG.md`。
 
 - 工作目录干净：待 Gate 0-6 commit 后确认
 - 当前分支：待确认
@@ -216,8 +217,41 @@
 - W4.C.2 explicit non-actions: no `git add -A`
 - W4.C.2 explicit non-actions: no git push
 - W4.C.2 explicit non-actions: no `.gitignore` change
-- 当前阶段为 W4.C.2 checkpoint-impl log update
-- 下一步是 return to ChatGPT for review before starting any next checkpoint review / next module step
+- W4.D.1 LSTM classifier tests commit: `702db98 test(model): add W4.D.1 LSTM classifier shape tests`
+- W4.D.1 files changed: `tests/test_models_shape.py`
+- W4.D.1 tests added: 6 lazy-import `LSTMClassifier` tests
+- W4.D.1 LSTM coverage: forward output shape input `(32, 60, 7)` returns logits `(32, 2)`
+- W4.D.1 LSTM coverage: backward pass with `torch.nn.CrossEntropyLoss` produces gradients
+- W4.D.1 LSTM coverage: `bidirectional=True` still returns `(batch, num_classes)`
+- W4.D.1 LSTM coverage: single-layer dropout uses zero LSTM dropout / forward works
+- W4.D.1 LSTM coverage: outputs are logits, not softmax/sigmoid probabilities
+- W4.D.1 LSTM coverage: missing batch dimension raises `AssertionError` or `ValueError`
+- W4.D.1 test-first / lazy import compliance: tests use lazy import for `ml_utils.models.lstm_classifier`
+- W4.D.1 test-first / lazy import compliance: no top-level import of `LSTMClassifier`
+- W4.D.1 test-first / lazy import compliance: `ml_utils/models/lstm_classifier.py` was not created in W4.D.1
+- W4.D.1 MVP scope compliance: only `LSTMClassifier` tests were added
+- W4.D.1 MVP scope compliance: no TCN tests
+- W4.D.1 MVP scope compliance: no DLinear tests
+- W4.D.1 MVP scope compliance: no TCN / DLinear production files created
+- W4.D.1 MVP scope compliance: TCN / DLinear remain deferred to Phase 1B
+- W4.D.1 validation evidence: `tests/test_models_shape.py --collect-only` collected 6 tests in 0.94s
+- W4.D.1 validation evidence: all collect-only collected 78 tests in 1.09s
+- W4.D.1 validation evidence: `git diff --check` had no output
+- W4.D.1 commit details: commit `702db98 test(model): add W4.D.1 LSTM classifier shape tests`
+- W4.D.1 commit details: commit stat `tests/test_models_shape.py | 128 insertions`
+- W4.D.1 commit details: post-commit working tree clean
+- W4.D.1 explicit non-actions: no production code created
+- W4.D.1 explicit non-actions: no `ml_utils/models/lstm_classifier.py` created
+- W4.D.1 explicit non-actions: no TCN / DLinear files created
+- W4.D.1 explicit non-actions: no TCN / DLinear tests added
+- W4.D.1 explicit non-actions: existing tests not modified
+- W4.D.1 explicit non-actions: `SPRINT_LOG.md` not modified during test session
+- W4.D.1 explicit non-actions: no normal pytest run
+- W4.D.1 explicit non-actions: no git push
+- W4.D.1 explicit non-actions: no `git add .`
+- W4.D.1 explicit non-actions: no `git add -A`
+- 当前阶段为 W4.D.1 LSTM classifier tests log update
+- 下一步是 return to ChatGPT for review before W4.D.2 LSTM implementation
 
 ## Atomic commits
 

@@ -289,8 +289,46 @@
 - W4.D.2 explicit non-actions: no git push
 - W4.D.2 explicit non-actions: no `git add .`
 - W4.D.2 explicit non-actions: no `git add -A`
-- 当前阶段为 W4.D.2 LSTM classifier implementation log update
-- 下一步是 return to ChatGPT for review before LSTM implementation review or next module step
+- W5.1 trainer smoke tests commit: `2c9a43c test(trainer): add W5.1 trainer smoke tests`
+- W5.1 files changed: `tests/test_trainer_smoke.py`
+- W5.1 tests added: 8 lazy-import trainer tests
+- W5.1 trainer coverage: `train_one_epoch` returns loss and accuracy
+- W5.1 trainer coverage: `train_one_epoch` updates at least one model parameter
+- W5.1 trainer coverage: `train_one_epoch` supports `grad_clip` smoke path
+- W5.1 trainer coverage: `evaluate` returns metrics, `y_true`, and `y_pred`
+- W5.1 trainer coverage: `evaluate` does not mutate model parameters
+- W5.1 trainer coverage: `Trainer.fit` creates `best.pt` and `last.pt`
+- W5.1 trainer coverage: `Trainer.fit` returns history with expected keys
+- W5.1 trainer coverage: early stopping exits before max epochs on plateau
+- W5.1 trainer coverage: invalid `monitor_mode` raises `ValueError`
+- W5.1 trainer coverage: non-plateau scheduler `StepLR` is stepped per epoch
+- W5.1 test-first / lazy import compliance: tests use lazy import for `ml_utils.trainer`
+- W5.1 test-first / lazy import compliance: no top-level import of `train_one_epoch`, `evaluate`, or `Trainer`
+- W5.1 test-first / lazy import compliance: `ml_utils/trainer.py` was not created in W5.1
+- W5.1 validation evidence: `tests/test_trainer_smoke.py --collect-only` collected 8 tests in 1.17s
+- W5.1 validation evidence: all collect-only collected 86 tests in 1.22s
+- W5.1 validation evidence: `git diff --check` had no output
+- W5.1 recovery detail: first W5.1 attempt completed collect-only validation but stopped before final git checks / commit because the approval system rejected further shell commands due usage limit
+- W5.1 recovery detail: recovery reused prior collect-only validation
+- W5.1 recovery detail: recovery confirmed only `tests/test_trainer_smoke.py` was present
+- W5.1 recovery detail: recovery ran `git diff --check` with no output
+- W5.1 recovery detail: recovery committed only `tests/test_trainer_smoke.py`
+- W5.1 commit details: commit `2c9a43c test(trainer): add W5.1 trainer smoke tests`
+- W5.1 commit details: commit stat `tests/test_trainer_smoke.py | 251 insertions`
+- W5.1 commit details: post-commit working tree clean
+- W5.1 explicit non-actions: no production code created
+- W5.1 explicit non-actions: no `ml_utils/trainer.py` created
+- W5.1 explicit non-actions: existing tests not modified
+- W5.1 explicit non-actions: `SPRINT_LOG.md` not modified during test session
+- W5.1 explicit non-actions: no normal pytest run
+- W5.1 explicit non-actions: no full pytest run
+- W5.1 explicit non-actions: no git clean
+- W5.1 explicit non-actions: no git push
+- W5.1 explicit non-actions: no `git add .`
+- W5.1 explicit non-actions: no `git add -A`
+- 最近完成: W5.1 trainer smoke tests
+- 当前阶段: W5.1 trainer smoke tests log update
+- 下一步: return to ChatGPT for review before W5.2 trainer implementation
 
 ## Atomic commits
 

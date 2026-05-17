@@ -4,10 +4,10 @@
 
 ## 当前状态
 
-最近完成:     W4.B.2 dataset-impl
-当前阶段:     W4.B.2 dataset-impl log update
-下一步:       return to ChatGPT for review and decide next authorized workstream
-备注:         不要声称已进入下一个模块；本次只记录 W4.B.2 dataset implementation commit
+最近完成:     W4.C.1 checkpoint-test
+当前阶段:     W4.C.1 checkpoint-test log update
+下一步:       return to ChatGPT for review, then W4.C.2 checkpoint-impl if authorized
+备注:         不要声称已进入 W4.C.2；本次只记录 W4.C.1 checkpoint test commit
 ## 已合并模块清单（Codex 可以安全 import）
 
 - `ml_utils/config.py`
@@ -48,9 +48,10 @@
 | W4.3 metrics-review | PASS | fresh review found no BLOCKER / WARNING / NIT |
 | W4.B.1 dataset-test | PASS | commit `ceb7969`; added dataset leakage, label generation, and window boundary tests; `pytest --collect-only` collected 63 items; no production code modified |
 | W4.B.2 dataset-impl | PASS | commit `9466d05`; `ml_utils/dataset.py`; implemented label generation, chronological splits, train-only scaling, split/day boundary invalid marking, and per-ticker window dataset; targeted finalization tests passed; collect-only collected 63 tests |
+| W4.C.1 checkpoint-test | PASS | commit `a46afcf`; added `tests/test_checkpoint.py`; 9 lazy-import checkpoint tests collected; full collect-only collected 72 tests; `ml_utils/checkpoint.py` not created |
 ## 当前 git 状态
 
-记录 W4.B.2 dataset implementation 后，预期本次 docs/log step 只修改 `SPRINT_LOG.md`。
+记录 W4.C.1 checkpoint-test 后，预期本次 docs/log step 只修改 `SPRINT_LOG.md`。
 
 - 工作目录干净：待 Gate 0-6 commit 后确认
 - 当前分支：待确认
@@ -156,8 +157,36 @@
 - W4.B.2 explicit non-actions: no git push
 - W4.B.2 explicit non-actions: no files besides `ml_utils/dataset.py` committed
 - W4.B.2 finalization retry cleanup: generated `__pycache__` files were cleaned during finalization retry only
-- 当前阶段为 W4.B.2 dataset-impl log update
-- 下一步是 return to ChatGPT for review and decide next authorized workstream
+- W4.C.1 checkpoint-test commit: `a46afcf test: add W4.C.1 checkpoint tests`
+- W4.C.1 files changed: `tests/test_checkpoint.py`
+- W4.C.1 tests added: 9 lazy-import checkpoint tests
+- W4.C.1 checkpoint coverage: save/load model weight roundtrip
+- W4.C.1 checkpoint coverage: optimizer state restore
+- W4.C.1 checkpoint coverage: scheduler state restore
+- W4.C.1 checkpoint coverage: metadata roundtrip
+- W4.C.1 checkpoint coverage: `extra=None` roundtrip
+- W4.C.1 checkpoint coverage: missing checkpoint path raises explicit error
+- W4.C.1 checkpoint coverage: `weights_only=True` behavior
+- W4.C.1 checkpoint coverage: raw checkpoint does not contain full model object
+- W4.C.1 checkpoint coverage: `rng_state` keys exist
+- W4.C.1 test-first / lazy import compliance: tests use lazy import for `ml_utils.checkpoint`
+- W4.C.1 test-first / lazy import compliance: no top-level import of `ml_utils.checkpoint`
+- W4.C.1 test-first / lazy import compliance: `ml_utils/checkpoint.py` was not created in W4.C.1
+- W4.C.1 validation evidence: `tests/test_checkpoint.py --collect-only` collected 9 tests
+- W4.C.1 validation evidence: all collect-only collected 72 tests
+- W4.C.1 commit details: commit `a46afcf test: add W4.C.1 checkpoint tests`
+- W4.C.1 commit details: commit stat `tests/test_checkpoint.py | 248 insertions`
+- W4.C.1 commit details: `git diff --cached --check` had no output
+- W4.C.1 commit details: post-commit working tree clean
+- W4.C.1 explicit non-actions: no production code created
+- W4.C.1 explicit non-actions: no `ml_utils/checkpoint.py` created
+- W4.C.1 explicit non-actions: no existing tests modified
+- W4.C.1 explicit non-actions: no full pytest was run
+- W4.C.1 explicit non-actions: no git push
+- W4.C.1 explicit non-actions: no `git add .`
+- W4.C.1 explicit non-actions: no `git add -A`
+- 当前阶段为 W4.C.1 checkpoint-test log update
+- 下一步是 return to ChatGPT for review, then W4.C.2 checkpoint-impl if authorized
 
 ## Atomic commits
 

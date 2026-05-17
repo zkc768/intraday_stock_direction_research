@@ -1,13 +1,13 @@
 # SPRINT_LOG.md — hf_stock_clf / ml_utils
 
-最近更新：2026-05-16
+最近更新：2026-05-17
 
 ## 当前状态
 
-最近完成:     W4.D.2 LSTM classifier implementation
-当前阶段:     W4.D.2 LSTM classifier implementation log update
-下一步:       return to ChatGPT for review before LSTM implementation review or next module step
-备注:         不要声称 trainer/TCN/DLinear/next workstream 已开始；本次只记录 W4.D.2 LSTM classifier implementation commit
+最近完成:     MVP full validation audit
+当前阶段:     MVP full validation log update
+下一步:       return to ChatGPT for review before notebook work or final handoff/memory file
+备注:         不要声称 notebook work 或 Phase 1B 已开始；本次只记录 MVP full validation audit
 ## 已合并模块清单（Codex 可以安全 import）
 
 - `ml_utils/config.py`
@@ -16,6 +16,7 @@
 - `ml_utils/dataset.py`
 - `ml_utils/checkpoint.py`
 - `ml_utils/models/lstm_classifier.py`
+- `ml_utils/trainer.py`
 
 ## Gate status
 
@@ -54,9 +55,99 @@
 | W4.C.2 checkpoint-impl | PASS | commit `b2738ee`; `ml_utils/checkpoint.py`; implemented save/load checkpoint; `tests/test_checkpoint.py` 9 passed, 1 warning; collect-only collected 72 tests |
 | W4.D.1 LSTM classifier tests | PASS | commit `702db98`; added `tests/test_models_shape.py`; 6 lazy-import LSTMClassifier tests collected; full collect-only collected 78 tests; `ml_utils/models/lstm_classifier.py` not created |
 | W4.D.2 LSTM classifier implementation | PASS | commit `e13ad0f`; `ml_utils/models/lstm_classifier.py`; implemented LSTMClassifier; `tests/test_models_shape.py` 6 passed; collect-only collected 78 tests |
+| W5.1 trainer smoke tests | PASS | commit `2c9a43c`; added `tests/test_trainer_smoke.py`; 8 lazy-import trainer tests collected; full collect-only collected 86 tests; `ml_utils/trainer.py` not created |
+| W5.2 trainer implementation | PASS | commit `a52bf0a`; `ml_utils/trainer.py`; implemented trainer loop helpers and Trainer.fit; `tests/test_trainer_smoke.py` 8 passed; collect-only collected 86 tests |
+| MVP full validation audit | PASS | Python 3.11.15; pytest 8.3.5; pip check passed; collect-only collected 86 tests; full pytest passed 86 tests with 1 non-blocking warning; scope audit passed |
+
+## MVP full validation audit
+
+Validation session name: MVP full validation audit
+
+Overall verdict: PASS
+
+### Environment validation
+
+- Python version: Python 3.11.15
+- pytest version: pytest 8.3.5
+- torch 2.12.0+cpu
+- numpy 1.26.4
+- pandas 2.2.2
+- sklearn 1.4.2
+- pip check: No broken requirements found
+
+### Test validation
+
+- collect-only: 86 tests collected in 1.13s
+- full pytest: 86 passed, 1 warning in 3.05s
+
+### Non-blocking warning observed
+
+- PyTorch scheduler warning in `tests/test_checkpoint.py:96` about calling `lr_scheduler.step()` before `optimizer.step()`
+- Classification: non-blocking warning / future hygiene candidate
+- No test failure resulted from this warning
+
+### Scope audit
+
+MVP production files present:
+
+- `ml_utils/config.py`
+- `ml_utils/seed.py`
+- `ml_utils/metrics.py`
+- `ml_utils/dataset.py`
+- `ml_utils/checkpoint.py`
+- `ml_utils/models/lstm_classifier.py`
+- `ml_utils/trainer.py`
+
+Phase 1B files absent:
+
+- `ml_utils/models/tcn_classifier.py`
+- `ml_utils/models/dlinear_classifier.py`
+
+Expected tests present:
+
+- `tests/test_config.py`
+- `tests/test_seed.py`
+- `tests/test_metrics.py`
+- `tests/test_label_generation.py`
+- `tests/test_dataset_leakage.py`
+- `tests/test_window_boundaries.py`
+- `tests/test_checkpoint.py`
+- `tests/test_models_shape.py`
+- `tests/test_trainer_smoke.py`
+
+### Notebook status
+
+- `notebooks` directory produced no output
+- no notebook created
+
+### Cache cleanup
+
+Removed pytest-generated untracked cache directories:
+
+- `ml_utils/__pycache__/`
+- `ml_utils/models/__pycache__/`
+- `tests/__pycache__/`
+
+### Git status
+
+- clean before validation
+- clean after cache cleanup
+- no files modified
+- no files committed during validation audit
+
+### Explicit non-actions
+
+- no production code changed
+- no tests changed
+- no `SPRINT_LOG.md` update during validation audit
+- no notebook created
+- no TCN / DLinear files created
+- no git add
+- no git commit
+- no git push
 ## 当前 git 状态
 
-记录 W4.D.2 LSTM classifier implementation 后，预期本次 docs/log step 只修改 `SPRINT_LOG.md`。
+记录 MVP full validation audit 后，预期本次 docs/log step 只修改 `SPRINT_LOG.md`。
 
 - 工作目录干净：待 Gate 0-6 commit 后确认
 - 当前分支：待确认

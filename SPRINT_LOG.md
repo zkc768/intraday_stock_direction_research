@@ -4,10 +4,10 @@
 
 ## 当前状态
 
-最近完成:     W4.D.1 LSTM classifier tests
-当前阶段:     W4.D.1 LSTM classifier tests log update
-下一步:       return to ChatGPT for review before W4.D.2 LSTM implementation
-备注:         不要声称 W4.D.2 已开始或 LSTM implementation 已存在；本次只记录 W4.D.1 LSTM classifier test commit
+最近完成:     W4.D.2 LSTM classifier implementation
+当前阶段:     W4.D.2 LSTM classifier implementation log update
+下一步:       return to ChatGPT for review before LSTM implementation review or next module step
+备注:         不要声称 trainer/TCN/DLinear/next workstream 已开始；本次只记录 W4.D.2 LSTM classifier implementation commit
 ## 已合并模块清单（Codex 可以安全 import）
 
 - `ml_utils/config.py`
@@ -15,6 +15,7 @@
 - `ml_utils/metrics.py`
 - `ml_utils/dataset.py`
 - `ml_utils/checkpoint.py`
+- `ml_utils/models/lstm_classifier.py`
 
 ## Gate status
 
@@ -52,9 +53,10 @@
 | W4.C.1 checkpoint-test | PASS | commit `a46afcf`; added `tests/test_checkpoint.py`; 9 lazy-import checkpoint tests collected; full collect-only collected 72 tests; `ml_utils/checkpoint.py` not created |
 | W4.C.2 checkpoint-impl | PASS | commit `b2738ee`; `ml_utils/checkpoint.py`; implemented save/load checkpoint; `tests/test_checkpoint.py` 9 passed, 1 warning; collect-only collected 72 tests |
 | W4.D.1 LSTM classifier tests | PASS | commit `702db98`; added `tests/test_models_shape.py`; 6 lazy-import LSTMClassifier tests collected; full collect-only collected 78 tests; `ml_utils/models/lstm_classifier.py` not created |
+| W4.D.2 LSTM classifier implementation | PASS | commit `e13ad0f`; `ml_utils/models/lstm_classifier.py`; implemented LSTMClassifier; `tests/test_models_shape.py` 6 passed; collect-only collected 78 tests |
 ## 当前 git 状态
 
-记录 W4.D.1 LSTM classifier tests 后，预期本次 docs/log step 只修改 `SPRINT_LOG.md`。
+记录 W4.D.2 LSTM classifier implementation 后，预期本次 docs/log step 只修改 `SPRINT_LOG.md`。
 
 - 工作目录干净：待 Gate 0-6 commit 后确认
 - 当前分支：待确认
@@ -250,8 +252,45 @@
 - W4.D.1 explicit non-actions: no git push
 - W4.D.1 explicit non-actions: no `git add .`
 - W4.D.1 explicit non-actions: no `git add -A`
-- 当前阶段为 W4.D.1 LSTM classifier tests log update
-- 下一步是 return to ChatGPT for review before W4.D.2 LSTM implementation
+- W4.D.2 LSTM classifier implementation commit: `e13ad0f feat(model): add W4.D.2 LSTM classifier implementation`
+- W4.D.2 files changed: `ml_utils/models/lstm_classifier.py`
+- W4.D.2 implementation summary: implemented `LSTMClassifier`
+- W4.D.2 implementation summary: uses `nn.LSTM(batch_first=True)`
+- W4.D.2 implementation summary: uses last time step output
+- W4.D.2 implementation summary: applies `LayerNorm`
+- W4.D.2 implementation summary: uses `Linear` classification head
+- W4.D.2 implementation summary: returns raw logits only
+- W4.D.2 implementation summary: no softmax
+- W4.D.2 implementation summary: no sigmoid
+- W4.D.2 implementation summary: supports `bidirectional=True`
+- W4.D.2 implementation summary: single-layer LSTM uses internal `dropout=0.0`
+- W4.D.2 implementation summary: validates `input_size > 0`
+- W4.D.2 implementation summary: validates `hidden_size > 0`
+- W4.D.2 implementation summary: validates `num_layers > 0`
+- W4.D.2 implementation summary: validates `num_classes > 0`
+- W4.D.2 implementation summary: validates `0 <= dropout < 1`
+- W4.D.2 implementation summary: forward enforces 3D input shape
+- W4.D.2 implementation summary: forward enforces last dimension equals `input_size`
+- W4.D.2 reference note: `reference_excerpts/yutsuro_lstm_module.py` was not present
+- W4.D.2 reference note: implementation followed `docs/ml_utils_construction_plan_v2.md` §5.4 spec
+- W4.D.2 validation evidence: `tests/test_models_shape.py`: 6 passed in 1.05s
+- W4.D.2 validation evidence: all collect-only: 78 tests collected in 1.07s
+- W4.D.2 validation evidence: `git diff --check` had no output
+- W4.D.2 commit details: commit `e13ad0f feat(model): add W4.D.2 LSTM classifier implementation`
+- W4.D.2 commit details: commit stat `ml_utils/models/lstm_classifier.py | 72 insertions`
+- W4.D.2 commit details: post-commit working tree clean
+- W4.D.2 commit details: no cache cleanup needed; no `__pycache__` appeared
+- W4.D.2 explicit non-actions: tests not modified
+- W4.D.2 explicit non-actions: `SPRINT_LOG.md` not modified during implementation session
+- W4.D.2 explicit non-actions: no TCN / DLinear files created
+- W4.D.2 explicit non-actions: no trainer code created
+- W4.D.2 explicit non-actions: no `.gitignore` change
+- W4.D.2 explicit non-actions: no full pytest run
+- W4.D.2 explicit non-actions: no git push
+- W4.D.2 explicit non-actions: no `git add .`
+- W4.D.2 explicit non-actions: no `git add -A`
+- 当前阶段为 W4.D.2 LSTM classifier implementation log update
+- 下一步是 return to ChatGPT for review before LSTM implementation review or next module step
 
 ## Atomic commits
 

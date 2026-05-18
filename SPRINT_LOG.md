@@ -4,10 +4,10 @@
 
 ## 当前状态
 
-最近完成:     W6 notebook smoke phase closed
-当前阶段:     W6 complete
-下一步:       final full validation / decide next sprint scope
-备注:         Notebook 01 and Notebook 02 smoke passed with tracked non-blocking warnings; no code/notebook patch required before W6 close
+最近完成:     W6 final full validation PASS WITH WARNINGS
+当前阶段:     W6 complete and validated
+下一步:       decide next sprint scope
+备注:         86 tests passed; Notebook 01/02 tracked files clean; runtime artifacts ignored; Phase 1B files absent; one existing PyTorch scheduler warning tracked
 ## 已合并模块清单（Codex 可以安全 import）
 
 - `ml_utils/config.py`
@@ -61,6 +61,7 @@
 | W6.4 Notebook 01 single-stock LSTM smoke | PASS WITH WARNING | Notebook 01 executed with CSCO 5000-row subset; 2 epochs completed; final compact table present; no tracked files changed; checkpoint directory empty warning tracked |
 | W6.12 Notebook 02 pooled LSTM smoke | PASS WITH WARNINGS | Notebook 02 executed with 5 tickers x 5000 rows; 2 epochs completed; shuffled-label sanity PASS; no tracked files changed; pandas FutureWarning tracked |
 | W6.15 Notebook smoke phase closure | PASS WITH WARNINGS | W6 close ready after log-only wrap-up; tracked warnings deferred or classified as environment noise; no notebook / data / test / `ml_utils` patch required |
+| W6.17 Final full validation after notebook smoke closure | PASS WITH WARNINGS | Python / pip / imports passed; 86 tests passed with 1 existing scheduler warning; notebooks clean; runtime artifacts ignored; no tracked diff |
 
 ## MVP full validation audit
 
@@ -364,6 +365,81 @@ Closure verdict: PASS WITH WARNINGS
 ### Recommended next step
 
 - Final full validation / decide next sprint scope
+
+## W6.17 Final full validation after notebook smoke closure - PASS WITH WARNINGS
+
+Date: 2026-05-17
+
+Decision: FINAL_VALIDATION_PASS_WITH_WARNINGS_READY_TO_RECORD
+
+Validation verdict: PASS WITH WARNINGS
+
+### Environment validation
+
+- Python: 3.11.15
+- pytest: 8.3.5
+- pip check: passed
+- torch: 2.12.0+cpu
+- numpy: 1.26.4
+- pandas: 2.2.2
+- sklearn: 1.4.2
+
+### Test validation
+
+- collect-only: 86 tests collected
+- full pytest: 86 passed
+- Warning: one existing PyTorch scheduler-order warning in `tests/test_checkpoint.py::test_scheduler_state_is_restored_when_scheduler_is_provided`
+
+### Notebook hygiene
+
+- Notebook 01 tracked version clean: 14 cells, outputs=0, execution_counts=0
+- Notebook 01 PROJECT_ROOT bootstrap present
+- Notebook 01 PROJECT_ROOT-relative `DATA_PATH` present
+- Notebook 02 tracked version clean: 18 cells, outputs=0, execution_counts=0
+- Notebook 02 `FULL_RUN=False` present
+- Notebook 02 PROJECT_ROOT bootstrap present
+- Notebook 02 PROJECT_ROOT-relative `DATA_DIR` present
+- Notebook 02 remains LSTM only, no TCN / DLinear
+- No Notebook 03
+
+### Runtime / data validation
+
+- Executed Notebook 01 exists
+- Executed Notebook 02 exists
+- Notebook 02 checkpoint artifacts exist
+- All five processed CSVs exist
+- `data/` and `checkpoints/` artifacts ignored by git
+
+### Scope validation
+
+- MVP production files present
+- Phase 1B files absent:
+  - `ml_utils/models/tcn_classifier.py` absent
+  - `ml_utils/models/dlinear_classifier.py` absent
+
+### SPRINT_LOG consistency
+
+- Notebook 01 smoke recorded
+- Notebook 02 smoke recorded
+- W6 closure recorded
+- Tracked W6 warnings still recorded
+
+### Git hygiene
+
+- Git status clean
+- No tracked diff
+
+### Explicit non-actions
+
+- No notebook patch required
+- No `ml_utils` patch required
+- No test patch required
+- No data / checkpoint patch required
+- No TCN / DLinear started
+
+### Recommended next step
+
+- Decide next sprint scope
 ## 当前 git 状态
 
 记录 MVP full validation audit 后，预期本次 docs/log step 只修改 `SPRINT_LOG.md`。

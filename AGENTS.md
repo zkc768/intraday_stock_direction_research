@@ -464,6 +464,26 @@ spec 不要求的，就不要建。
 - `torch.optim` 变体（RAdam、NAdam 可用性）
 - `pandas` 的 `resample` / `groupby` 行为
 
+## Skills 使用说明
+
+本项目的 skills 使用指南见：
+
+```text
+docs/SKILLS_USAGE.md
+```
+
+该文件只用于帮助选择合适的辅助 skill，不改变本文件的硬约束。
+
+优先级规则：
+
+1. 当前 sprint prompt
+2. AGENTS.md
+3. SPRINT_LOG.md / 当前 memory
+4. docs/ml_utils_construction_plan_v2.md
+5. docs/SKILLS_USAGE.md
+
+任何 skill 都不得扩大当前 sprint scope。若 skill 建议与本文件冲突，必须停下并报告。
+
 ## 8. 反模式速查表
 
 每写完一个模块，对照检查。命中任何一条 → 在向用户汇报时显式说明命中编号，或修掉。

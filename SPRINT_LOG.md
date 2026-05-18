@@ -4,10 +4,10 @@
 
 ## 当前状态
 
-最近完成:     W6.4 Notebook 01 single-stock LSTM smoke PASS
-当前阶段:     W6 Notebook 01 smoke recorded
-下一步:       W6.8 Notebook 02 read-only planning / public API support audit
-备注:         Notebook 01 smoke passed on CSCO 5000-row orchestration subset; Notebook 02 pooled/global-scaler workflow 暂缓，先确认 dataset.py public API 是否自然支持 pooled workflow，不创建 Notebook 02
+最近完成:     W6.12 Notebook 02 pooled LSTM smoke PASS
+当前阶段:     W6 Notebook 02 smoke recorded
+下一步:       W6 wrap-up / decide whether to record notebook smoke phase complete or address tracked warnings
+备注:         Notebook 02 pooled smoke passed on 5 tickers with 5000 rows each; shuffled-label sanity PASS; pandas FutureWarning tracked
 ## 已合并模块清单（Codex 可以安全 import）
 
 - `ml_utils/config.py`
@@ -59,6 +59,7 @@
 | W5.2 trainer implementation | PASS | commit `a52bf0a`; `ml_utils/trainer.py`; implemented trainer loop helpers and Trainer.fit; `tests/test_trainer_smoke.py` 8 passed; collect-only collected 86 tests |
 | MVP full validation audit | PASS | Python 3.11.15; pytest 8.3.5; pip check passed; collect-only collected 86 tests; full pytest passed 86 tests with 1 non-blocking warning; scope audit passed |
 | W6.4 Notebook 01 single-stock LSTM smoke | PASS WITH WARNING | Notebook 01 executed with CSCO 5000-row subset; 2 epochs completed; final compact table present; no tracked files changed; checkpoint directory empty warning tracked |
+| W6.12 Notebook 02 pooled LSTM smoke | PASS WITH WARNINGS | Notebook 02 executed with 5 tickers x 5000 rows; 2 epochs completed; shuffled-label sanity PASS; no tracked files changed; pandas FutureWarning tracked |
 
 ## MVP full validation audit
 
@@ -217,6 +218,109 @@ Verdict: PASS WITH WARNING
 
 - W6.8 Notebook 02 read-only planning / public API support audit
 - Notebook 02 pooled/global-scaler workflow 暂缓；先确认 `dataset.py` public API 是否自然支持 pooled workflow，不创建 Notebook 02
+
+## W6.12 Notebook 02 pooled LSTM smoke - PASS
+
+Date: 2026-05-17
+
+Verdict: PASS WITH WARNINGS
+
+### Execution target
+
+- Input notebook: `notebooks/02_smoke_test_pooled_lstm.ipynb`
+- Executed notebook: `checkpoints/notebook_runs/02_smoke_test_pooled_lstm.executed.ipynb`
+- Data files:
+  - `data/CSCO.csv`
+  - `data/JPM.csv`
+  - `data/KO.csv`
+  - `data/MSFT.csv`
+  - `data/WMT.csv`
+- Related notebook commit:
+  - `a9a2b7e notebook: add pooled LSTM smoke test`
+
+### Execution environment
+
+- Python: 3.11.15
+- nbconvert: 7.16.6
+- pip check: passed
+
+### Smoke evidence
+
+- Tickers: CSCO, JPM, KO, MSFT, WMT
+- Max rows per ticker: 5000
+- Loaded rows per ticker: all 5000
+- Split rows per ticker: train / val / test = 3500 / 750 / 750
+- Global train frame rows: 17500
+- Window counts:
+  - CSCO: train / val / test = 1936 / 400 / 396
+  - JPM: train / val / test = 1925 / 384 / 399
+  - KO: train / val / test = 1932 / 400 / 392
+  - MSFT: train / val / test = 1936 / 400 / 396
+  - WMT: train / val / test = 1925 / 393 / 400
+- Pooled dataset sizes: train / val / test = 9654 / 1977 / 1983
+- Model initialized: yes
+- Model: `lstm_classifier`
+- Parameters: 1538
+- Device: CPU
+- Training completed: yes
+- Epochs: 2
+- Best epoch: 1
+- Best val macro F1: 0.348814
+- Val accuracy: 0.535660
+- Val macro F1: 0.348814
+- Val balanced accuracy: 0.500000
+- Test accuracy: 0.616742
+- Test macro F1: 0.381472
+- Test balanced accuracy: 0.500000
+- Final compact table: present
+
+### Baseline comparison
+
+- Val `dummy_stratified` macro F1: 0.497313
+- Val delta vs `dummy_stratified`: -0.148498 macro F1
+- Test `dummy_stratified` macro F1: 0.493808
+- Test delta vs `dummy_stratified`: -0.112335 macro F1
+- Final summary: LSTM underperformed `dummy_stratified` on val/test
+
+### Shuffled-label sanity
+
+- Status: PASS
+- `shuffled_label_macro_f1`: 0.348814
+- `dummy_stratified_macro_f1_mean`: 0.497313
+- 1.10x threshold: 0.547044
+- 1.20x threshold: 0.596775
+
+### Checkpoint / artifacts
+
+- `checkpoints/notebook_02_pooled_lstm_smoke/main/best.pt`
+- `checkpoints/notebook_02_pooled_lstm_smoke/main/last.pt`
+- `checkpoints/notebook_02_pooled_lstm_smoke/shuffled_labels/best.pt`
+- `checkpoints/notebook_02_pooled_lstm_smoke/shuffled_labels/last.pt`
+
+### Git hygiene
+
+- Tracked Notebook 02 unchanged after execution
+- Notebook 01 unchanged
+- `ml_utils` unchanged
+- `tests` unchanged
+- Git status clean after smoke
+
+### Warnings
+
+- nbconvert emitted a Windows/zmq Proactor event loop warning; execution succeeded
+- pandas `FutureWarning` from `ml_utils/dataset.py:187` during `transform_split`; non-blocking, but track before future pandas upgrades
+- `checkpoints/notebook_02_pooled_lstm_shuffled/` empty because Notebook 02 used `checkpoints/notebook_02_pooled_lstm_smoke/shuffled_labels/`
+
+### Non-actions
+
+- Did not create Notebook 03
+- Did not start TCN / DLinear
+- Did not modify `ml_utils` or `tests`
+- Did not git add runtime artifacts
+
+### Next step
+
+- W6 wrap-up / decide whether to record notebook smoke phase complete or address tracked warnings
 ## 当前 git 状态
 
 记录 MVP full validation audit 后，预期本次 docs/log step 只修改 `SPRINT_LOG.md`。

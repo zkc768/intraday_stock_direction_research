@@ -4,10 +4,10 @@
 
 ## 当前状态
 
-最近完成:     MVP full validation audit
-当前阶段:     MVP full validation log update
-下一步:       return to ChatGPT for review before notebook work or final handoff/memory file
-备注:         不要声称 notebook work 或 Phase 1B 已开始；本次只记录 MVP full validation audit
+最近完成:     W6.4 Notebook 01 single-stock LSTM smoke PASS
+当前阶段:     W6 Notebook 01 smoke recorded
+下一步:       W6.8 Notebook 02 read-only planning / public API support audit
+备注:         Notebook 01 smoke passed on CSCO 5000-row orchestration subset; Notebook 02 pooled/global-scaler workflow 暂缓，先确认 dataset.py public API 是否自然支持 pooled workflow，不创建 Notebook 02
 ## 已合并模块清单（Codex 可以安全 import）
 
 - `ml_utils/config.py`
@@ -58,6 +58,7 @@
 | W5.1 trainer smoke tests | PASS | commit `2c9a43c`; added `tests/test_trainer_smoke.py`; 8 lazy-import trainer tests collected; full collect-only collected 86 tests; `ml_utils/trainer.py` not created |
 | W5.2 trainer implementation | PASS | commit `a52bf0a`; `ml_utils/trainer.py`; implemented trainer loop helpers and Trainer.fit; `tests/test_trainer_smoke.py` 8 passed; collect-only collected 86 tests |
 | MVP full validation audit | PASS | Python 3.11.15; pytest 8.3.5; pip check passed; collect-only collected 86 tests; full pytest passed 86 tests with 1 non-blocking warning; scope audit passed |
+| W6.4 Notebook 01 single-stock LSTM smoke | PASS WITH WARNING | Notebook 01 executed with CSCO 5000-row subset; 2 epochs completed; final compact table present; no tracked files changed; checkpoint directory empty warning tracked |
 
 ## MVP full validation audit
 
@@ -145,6 +146,77 @@ Removed pytest-generated untracked cache directories:
 - no git add
 - no git commit
 - no git push
+
+## W6.4 Notebook 01 single-stock LSTM smoke - PASS
+
+Date: 2026-05-17
+
+Verdict: PASS WITH WARNING
+
+### Execution target
+
+- Input notebook: `notebooks/01_smoke_test_single_stock_lstm.ipynb`
+- Executed notebook: `checkpoints/notebook_runs/01_smoke_test_single_stock_lstm.executed.ipynb`
+- Data file: `data/CSCO.csv`
+- Related notebook fix commits:
+  - `9fd1dd5 notebook: fix single-stock smoke import path`
+  - `416ec3c notebook: resolve smoke data path from project root`
+
+### Execution environment
+
+- Python: 3.11.15
+- nbconvert: 7.16.6
+- pip check: passed
+
+### Smoke evidence
+
+- Dataset / ticker: CSCO
+- Rows used: 5000
+- Date range: 1998-01-02 09:30:00 to 1998-04-03 11:20:00
+- Split rows: train / val / test = 3500 / 750 / 750
+- Dataset windows: train / val / test = 1936 / 400 / 396
+- Model initialized: yes
+- Model: `lstm_classifier`
+- Parameters: 5122
+- Device: cpu
+- Training completed: yes
+- Epochs: 2
+- Best epoch: 2
+- Best val macro F1: 0.347471
+- Val macro F1: 0.347471
+- Test macro F1: 0.405405
+- Test balanced accuracy: 0.500000
+- Final compact table: present, 10 rows including LSTM val/test plus dummy/always baselines
+
+### Baseline comparison
+
+- Val delta vs `dummy_stratified`: -0.142006 macro F1
+- Test delta vs `dummy_stratified`: -0.078262 macro F1
+
+### Git hygiene
+
+- Tracked notebook unchanged after execution
+- `ml_utils` unchanged
+- `tests` unchanged
+- Git status clean after smoke
+
+### Warning
+
+- `checkpoints/notebook_01_lstm_smoke/` empty
+- No model checkpoint file generated
+- Non-blocking for W6.4 orchestration smoke, but should be tracked before treating Notebook 01 as checkpoint-save validation
+
+### Non-actions
+
+- Did not create Notebook 02
+- Did not start TCN / DLinear
+- Did not modify `ml_utils` or `tests`
+- Did not git add runtime artifacts
+
+### Next step
+
+- W6.8 Notebook 02 read-only planning / public API support audit
+- Notebook 02 pooled/global-scaler workflow 暂缓；先确认 `dataset.py` public API 是否自然支持 pooled workflow，不创建 Notebook 02
 ## 当前 git 状态
 
 记录 MVP full validation audit 后，预期本次 docs/log step 只修改 `SPRINT_LOG.md`。

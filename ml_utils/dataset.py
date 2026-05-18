@@ -184,7 +184,12 @@ def transform_split(
     _require_numeric_columns(df, feature_cols, "transform_split")
 
     result = df.copy(deep=True)
-    result.loc[:, feature_cols] = scaler.transform(result[feature_cols].to_numpy(dtype=float))
+    transformed_features = pd.DataFrame(
+        scaler.transform(result[feature_cols].to_numpy(dtype=float)),
+        columns=feature_cols,
+        index=result.index,
+    )
+    result[feature_cols] = transformed_features
     return result
 
 

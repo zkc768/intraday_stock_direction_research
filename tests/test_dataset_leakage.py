@@ -1,3 +1,5 @@
+import warnings
+
 import numpy as np
 import pandas as pd
 import pytest
@@ -60,25 +62,35 @@ def test_fit_scaler_on_train_uses_train_statistics_only():
 def test_transform_split_returns_new_dataframe_and_preserves_input_values():
     from ml_utils.dataset import fit_scaler_on_train, transform_split
 
-    train = pd.DataFrame({"close": [10.0, 20.0, 30.0], "volume": [100.0, 200.0, 300.0]})
+    train = pd.DataFrame({"close": [10.0, 20.0, 30.0], "volume": [100, 200, 300]})
     split = pd.DataFrame(
         {
             "timestamp": pd.date_range("2024-01-02 09:30", periods=3, freq="5min"),
             "close": [40.0, 50.0, 60.0],
-            "volume": [400.0, 500.0, 600.0],
+            "volume": [400, 500, 600],
             "label": [1.0, 0.0, np.nan],
         }
     )
     original = split.copy(deep=True)
     scaler = fit_scaler_on_train(train, feature_cols=FEATURE_COLS, scaler_type="standard")
 
-    transformed = transform_split(split, scaler=scaler, feature_cols=FEATURE_COLS)
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always", FutureWarning)
+        transformed = transform_split(split, scaler=scaler, feature_cols=FEATURE_COLS)
 
     assert transformed is not split
     pd.testing.assert_frame_equal(split, original)
+    assert not any(issubclass(warning.category, FutureWarning) for warning in caught)
+    assert transformed.index.equals(split.index)
+    assert transformed.columns.equals(split.columns)
     assert transformed["timestamp"].equals(split["timestamp"])
     assert transformed["label"].equals(split["label"])
+    assert pd.isna(transformed.loc[2, "label"])
+    expected_features = scaler.transform(original[FEATURE_COLS].to_numpy(dtype=float))
+    np.testing.assert_allclose(transformed[FEATURE_COLS].to_numpy(), expected_features)
     assert not np.allclose(transformed[FEATURE_COLS].to_numpy(), split[FEATURE_COLS].to_numpy())
+    for column in FEATURE_COLS:
+        assert pd.api.types.is_numeric_dtype(transformed[column])
 
 
 @pytest.mark.parametrize("scaler_type", ["standard", "minmax"])

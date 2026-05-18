@@ -4,10 +4,10 @@
 
 ## 当前状态
 
-最近完成:     W6.12 Notebook 02 pooled LSTM smoke PASS
-当前阶段:     W6 Notebook 02 smoke recorded
-下一步:       W6 wrap-up / decide whether to record notebook smoke phase complete or address tracked warnings
-备注:         Notebook 02 pooled smoke passed on 5 tickers with 5000 rows each; shuffled-label sanity PASS; pandas FutureWarning tracked
+最近完成:     W6 notebook smoke phase closed
+当前阶段:     W6 complete
+下一步:       final full validation / decide next sprint scope
+备注:         Notebook 01 and Notebook 02 smoke passed with tracked non-blocking warnings; no code/notebook patch required before W6 close
 ## 已合并模块清单（Codex 可以安全 import）
 
 - `ml_utils/config.py`
@@ -60,6 +60,7 @@
 | MVP full validation audit | PASS | Python 3.11.15; pytest 8.3.5; pip check passed; collect-only collected 86 tests; full pytest passed 86 tests with 1 non-blocking warning; scope audit passed |
 | W6.4 Notebook 01 single-stock LSTM smoke | PASS WITH WARNING | Notebook 01 executed with CSCO 5000-row subset; 2 epochs completed; final compact table present; no tracked files changed; checkpoint directory empty warning tracked |
 | W6.12 Notebook 02 pooled LSTM smoke | PASS WITH WARNINGS | Notebook 02 executed with 5 tickers x 5000 rows; 2 epochs completed; shuffled-label sanity PASS; no tracked files changed; pandas FutureWarning tracked |
+| W6.15 Notebook smoke phase closure | PASS WITH WARNINGS | W6 close ready after log-only wrap-up; tracked warnings deferred or classified as environment noise; no notebook / data / test / `ml_utils` patch required |
 
 ## MVP full validation audit
 
@@ -321,6 +322,48 @@ Verdict: PASS WITH WARNINGS
 ### Next step
 
 - W6 wrap-up / decide whether to record notebook smoke phase complete or address tracked warnings
+
+## W6.15 Notebook smoke phase closure - PASS WITH WARNINGS
+
+Date: 2026-05-17
+
+Decision: W6_CLOSE_READY_AFTER_LOG_ONLY
+
+Closure verdict: PASS WITH WARNINGS
+
+### Notebook smoke status
+
+- Notebook 01 single-stock LSTM smoke: PASS WITH WARNING
+- Notebook 01 result recorded in commit `3b53ab8 docs(log): record Notebook 01 smoke pass`
+- Notebook 02 pooled 5-stock LSTM smoke: PASS WITH WARNINGS
+- Notebook 02 notebook commit: `a9a2b7e notebook: add pooled LSTM smoke test`
+- Notebook 02 result recorded in commit `fc4b4e1 docs(log): record Notebook 02 smoke pass`
+
+### W6.14 wrap-up audit
+
+- Tracked notebooks clean
+- Executed notebooks exist
+- Notebook 02 checkpoint artifacts exist
+- Git status clean
+
+### Warning disposition
+
+- Notebook 01 no checkpoint generated: TRACK_AND_DEFER; does not block W6 close
+- Notebook 02 Windows/zmq Proactor warning: IGNORE_ENVIRONMENT_NOISE; does not block W6 close
+- Notebook 02 pandas `FutureWarning` at `ml_utils/dataset.py:187`: TRACK_AND_DEFER; does not block W6 close
+- Notebook 02 empty alternate shuffled checkpoint directory: TRACK_AND_DEFER; does not block W6 close
+
+### Explicit non-actions
+
+- No notebook patch required
+- No `ml_utils` patch required
+- No data patch required
+- No test patch required
+- No TCN / DLinear started
+
+### Recommended next step
+
+- Final full validation / decide next sprint scope
 ## 当前 git 状态
 
 记录 MVP full validation audit 后，预期本次 docs/log step 只修改 `SPRINT_LOG.md`。

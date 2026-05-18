@@ -83,7 +83,7 @@ Action for agent:
 Every threshold sweep result must report retained_pct alongside metrics.
 
 Action for agent:
-- Profiling script output tables must include retained_pct column
+- Capacity profiling output tables must include retained_pct column
 - Notebook 03 must include retained_pct in all results tables
 
 ---
@@ -194,11 +194,13 @@ Tests:
 - Config without new fields uses defaults
 - Existing tests still pass
 
-### Step 3: Capacity profiling script — next
+### Step 3: Capacity profiling — next
 
-File: scripts/phase1b_capacity_profile.py
+Tests first: tests/test_phase1b_capacity_profile.py
+Core implementation: ml_utils/profiling.py
+Optional later wrapper: scripts/phase1b_capacity_profile.py
 
-This imports ml_utils and computes profiling tables. It is NOT a production module — it is an analysis script.
+The core helpers live in ml_utils/profiling.py. The optional wrapper imports ml_utils.profiling helpers and only handles data loading, CSV output, and printed verdicts; it must not duplicate core profiling logic.
 
 Input: data directory path (local or Drive)
 Output: CSV files + printed verdict

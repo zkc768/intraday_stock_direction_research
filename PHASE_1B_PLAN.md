@@ -58,7 +58,7 @@ From hf_stock_clf_after_w7_memory.md:
 Data source: raw 1-min txt files on Google Drive at /content/drive/MyDrive/stockdata/.
 
 For local ml_utils development and profiling, one of two options must be chosen:
-- Option A: Download processed 5-min CSV data to local data/ directory. Allows local pytest and profiling scripts.
+- Option A: Download processed 5-min CSV data to local data/ directory. Allows local pytest and optional profiling wrappers.
 - Option B: Keep data on Drive only. Profiling runs in a Colab notebook that imports ml_utils (synced via Drive or pip install from local).
 
 This must be resolved in Step 0 (preflight).
@@ -248,9 +248,13 @@ Tests: config validates with new fields; old configs still work.
 
 ### Step 3: Capacity profiling (next, ~1 afternoon)
 
-Create: scripts/phase1b_capacity_profile.py or notebooks/phase1b_capacity_profile.ipynb
+Tests first: tests/test_phase1b_capacity_profile.py
+Core implementation: ml_utils/profiling.py
+Optional later wrapper: scripts/phase1b_capacity_profile.py
 
-Imports ml_utils. Computes:
+The optional wrapper imports ml_utils.profiling helpers and only handles data loading, CSV output, and printed verdicts. It must not duplicate core profiling logic.
+
+Core helpers compute:
 - Bars-per-day distribution per ticker (min, P5, P10, median, max)
 - Pre-check: window+k > P5 → INFEASIBLE
 - For window=[12,24,60], k=[12,24], threshold=[0,5,10,15,20,30]:
@@ -263,6 +267,8 @@ Imports ml_utils. Computes:
   - volume: Volume
   - bounded: RSI_14, BB_pctB
   - return-like: MACD, MACD_signal, MACD_hist, rolling_std_20, OBV_roc
+
+Note: current scaler diagnostic is group-level. Per-column granularity can be achieved by using one column per feature group in the same API.
 
 Runs where data is (local or Colab). Output: CSV + printed verdict.
 

@@ -121,6 +121,66 @@ def make_binary_labels_from_future_avg_return(
     return result
 
 
+def make_no_trade_band_labels(
+    df: pd.DataFrame,
+    price_col: str,
+    k: int,
+    threshold_bps: float,
+    timestamp_col: str | None = None,
+) -> tuple[pd.DataFrame, dict[str, int]]:
+    """Return no-trade-band labels from the existing future-average return.
+
+    The labeled subset estimates P(sign(r) | X, |r| > threshold).
+    """
+
+    _check_positive_int(k, "k")
+    if threshold_bps < 0:
+        raise ValueError(f"threshold_bps must be >= 0, got {threshold_bps}")
+    _require_columns(df, [price_col], "make_no_trade_band_labels")
+    _require_numeric_columns(df, [price_col], "make_no_trade_band_labels")
+    if (df[price_col] <= 0).any():
+        bad_rows = df.index[df[price_col] <= 0].tolist()
+        raise ValueError(f"price column {price_col!r} must be positive at rows {bad_rows}")
+    if timestamp_col is not None:
+        _require_columns(df, [timestamp_col], "make_no_trade_band_labels")
+        if not is_datetime64_any_dtype(df[timestamp_col]):
+            raise ValueError(f"timestamp column {timestamp_col!r} must be datetime dtype")
+        _validate_strict_timestamp_order(df, timestamp_col, "make_no_trade_band_labels")
+
+    result = df.copy(deep=True)
+    prices = result[price_col].astype(float)
+    next_returns = prices.pct_change().shift(-1)
+    future_return_columns = [next_returns.shift(-offset) for offset in range(k)]
+    future_avg = pd.concat(future_return_columns, axis=1).mean(axis=1, skipna=False)
+
+    threshold = threshold_bps / 10_000
+    labels = pd.Series(np.nan, index=result.index, name="label", dtype="float64")
+    valid_mask = future_avg.notna()
+    up_mask = valid_mask & (future_avg > threshold)
+    down_mask = valid_mask & (future_avg < -threshold)
+    labels.loc[up_mask] = 1.0
+    labels.loc[down_mask] = 0.0
+
+    cross_day_mask = pd.Series(False, index=result.index, dtype=bool)
+    if timestamp_col is not None:
+        dates = result[timestamp_col].dt.date
+        horizon_dates = dates.shift(-k)
+        cross_day_mask = valid_mask & horizon_dates.notna() & (dates != horizon_dates)
+        labels.loc[cross_day_mask] = np.nan
+
+    result["future_avg_r"] = future_avg
+    result["label"] = labels
+    diagnostics = {
+        "n_total": int(len(result)),
+        "n_tail": int(future_avg.isna().sum()),
+        "n_cross_day": int(cross_day_mask.sum()),
+        "n_neutral": int((valid_mask & ~cross_day_mask & labels.isna()).sum()),
+        "n_up": int((labels == 1.0).sum()),
+        "n_down": int((labels == 0.0).sum()),
+    }
+    return result, diagnostics
+
+
 def make_time_splits(
     df: pd.DataFrame,
     train_ratio: float,

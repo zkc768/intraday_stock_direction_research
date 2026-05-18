@@ -46,6 +46,76 @@ def test_normal_data_config_accepts_valid_values():
     assert config.timezone_policy == "naive"
 
 
+def test_data_config_defaults_to_legacy_binary_label_mode():
+    from ml_utils.config import DataConfig
+
+    config = DataConfig(**_valid_data_config_kwargs())
+
+    assert config.label_mode == "legacy_binary"
+
+
+def test_data_config_accepts_no_trade_band_label_mode():
+    from ml_utils.config import DataConfig
+
+    kwargs = _valid_data_config_kwargs()
+    kwargs["label_mode"] = "no_trade_band"
+
+    config = DataConfig(**kwargs)
+
+    assert config.label_mode == "no_trade_band"
+
+
+def test_data_config_rejects_unknown_label_mode():
+    from ml_utils.config import DataConfig
+
+    kwargs = _valid_data_config_kwargs()
+    kwargs["label_mode"] = "three_class"
+
+    with pytest.raises(ValueError, match="label_mode"):
+        DataConfig(**kwargs)
+
+
+def test_data_config_defaults_threshold_bps_to_zero():
+    from ml_utils.config import DataConfig
+
+    config = DataConfig(**_valid_data_config_kwargs())
+
+    assert config.threshold_bps == pytest.approx(0.0)
+
+
+@pytest.mark.parametrize("threshold_bps", [5, 12.5])
+def test_data_config_accepts_positive_threshold_bps(threshold_bps):
+    from ml_utils.config import DataConfig
+
+    kwargs = _valid_data_config_kwargs()
+    kwargs["threshold_bps"] = threshold_bps
+
+    config = DataConfig(**kwargs)
+
+    assert config.threshold_bps == pytest.approx(threshold_bps)
+
+
+def test_data_config_rejects_negative_threshold_bps():
+    from ml_utils.config import DataConfig
+
+    kwargs = _valid_data_config_kwargs()
+    kwargs["threshold_bps"] = -1.0
+
+    with pytest.raises(ValueError, match="threshold_bps"):
+        DataConfig(**kwargs)
+
+
+@pytest.mark.parametrize("label_mode", ["volatility_scaled", "three_class", "threshold_sweep"])
+def test_phase1b_config_does_not_add_deferred_label_modes(label_mode):
+    from ml_utils.config import DataConfig
+
+    kwargs = _valid_data_config_kwargs()
+    kwargs["label_mode"] = label_mode
+
+    with pytest.raises(ValueError, match="label_mode"):
+        DataConfig(**kwargs)
+
+
 def test_normal_window_config_accepts_valid_values():
     from ml_utils.config import WindowConfig
 

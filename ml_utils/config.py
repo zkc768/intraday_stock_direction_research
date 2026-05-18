@@ -8,6 +8,8 @@ class DataConfig:
     data_dir: str
     timestamp_col: str = "timestamp"
     price_col: str = "close"
+    label_mode: str = "legacy_binary"
+    threshold_bps: float = 0.0
     feature_cols: list[str] = field(default_factory=list)
     bars_per_day: int = 78
     train_ratio: float = 0.7
@@ -32,6 +34,13 @@ class DataConfig:
             raise ValueError(f"DataConfig.bars_per_day must be > 0, got {self.bars_per_day!r}")
         if self.timezone_policy not in {"naive", "utc"}:
             raise ValueError(f"DataConfig.timezone_policy must be 'naive' or 'utc', got {self.timezone_policy!r}")
+        if self.label_mode not in {"legacy_binary", "no_trade_band"}:
+            raise ValueError(
+                "DataConfig.label_mode must be 'legacy_binary' or 'no_trade_band', "
+                f"got {self.label_mode!r}"
+            )
+        if self.threshold_bps < 0:
+            raise ValueError(f"DataConfig.threshold_bps must be >= 0, got {self.threshold_bps!r}")
 
 
 @dataclass

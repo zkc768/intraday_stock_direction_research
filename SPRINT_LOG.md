@@ -768,3 +768,34 @@ Validation verdict: PASS WITH WARNINGS
 |---|---|---|---|---|
 | C1 | 0-6 | user manual | 待 Gate 0-6 commit 后生成 | chore(gate): apply Gate 0-6 sprint contract updates |
 | C2 | 7-9 | Codex session | 不回填（按 Gate 9 规则，用 git log --oneline -1 验证） | chore(gate): land Gate 7-9 (whitelist audit + ltsf_data_loader vendor) for hf_stock_clf v4.1 |
+
+## W7.3 — Record W7 cleanup and skills docs
+
+- W7.2 pandas FutureWarning cleanup verdict: PASS WITH WARNINGS
+- W7.2 commit: `0ff48fb fix(dataset): avoid pandas dtype warning in transform_split`
+- W7.2 files changed:
+  - `ml_utils/dataset.py`
+  - `tests/test_dataset_leakage.py`
+- W7.2 dataset focused test: 7 passed
+- W7.2 full pytest: 86 passed, 1 existing warning
+- W7.2 pandas FutureWarning from `transform_split`: fixed
+- W7.2 remaining warning: existing PyTorch scheduler-order warning only
+- Skills usage docs verdict: PASS WITH WARNINGS
+- Skills usage docs commit: `80cfeea docs: add skills usage guide`
+- Skills usage docs files changed:
+  - `AGENTS.md`
+  - `docs/SKILLS_USAGE.md`
+- Skills usage docs scope: added standalone skills usage guide
+- Skills usage docs scope: added short `AGENTS.md` reference section
+- Skills usage docs scope: did not merge full skills guide into `AGENTS.md`
+- W7.3 non-actions: no notebook execution
+- W7.3 non-actions: no training
+- W7.3 non-actions: no Phase 1B
+- W7.3 non-actions: no Notebook 03
+- W7.3 non-actions: no TCN/DLinear
+- W7.3 non-actions: no `ml_utils` changes during skills docs step
+- W7.3 non-actions: no tests changes during skills docs step
+- Current status: W7 cleanup/logging status recorded
+- Current status: git status expected clean
+- Recommended next decision: choose between README/MVP documentation pass, checkpoint cleanup, or Phase 1B readiness audit
+- Recommended next decision: do not directly implement Phase 1B without readiness/reference audit

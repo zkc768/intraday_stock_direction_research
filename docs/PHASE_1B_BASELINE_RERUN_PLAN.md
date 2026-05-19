@@ -22,33 +22,55 @@ The goal is to measure the label-change effect before changing model architectur
 
 Use the P1B.7 / P1B.7d profiling results as the source of truth for the first rerun grid.
 
-| Role | window_size | label_horizon_k | threshold_bps |
-|---|---:|---:|---:|
-| Main | 12 | 12 | 5 |
-| Secondary | 24 | 12 | 5 |
-| Longer horizon | 12 | 24 | 5 |
-| Long-context stress test | 60 | 12 | 5 |
-| Sensitivity only | 12 | 12 | 10 |
+| Candidate | window_size | label_horizon_k | threshold_bps | split | n_valid_windows | minority_pct |
+|---|---:|---:|---:|---|---:|---:|
+| Main | 12 | 12 | 5 | train | 213116 | 0.4921 |
+| Main | 12 | 12 | 5 | val | 11903 | 0.4990 |
+| Main | 12 | 12 | 5 | test | 19129 | 0.4531 |
+| Secondary | 24 | 12 | 5 | train | 161397 | 0.4927 |
+| Secondary | 24 | 12 | 5 | val | 8118 | 0.4963 |
+| Secondary | 24 | 12 | 5 | test | 13395 | 0.4465 |
+| Longer horizon | 12 | 24 | 5 | train | 88783 | 0.4880 |
+| Longer horizon | 12 | 24 | 5 | val | 2960 | 0.4811 |
+| Longer horizon | 12 | 24 | 5 | test | 6644 | 0.3975 |
+| Long-context stress test | 60 | 12 | 5 | train | 36780 | 0.4965 |
+| Long-context stress test | 60 | 12 | 5 | val | 1695 | 0.4956 |
+| Long-context stress test | 60 | 12 | 5 | test | 2940 | 0.4650 |
+| Sensitivity only | 12 | 12 | 10 | train | 56900 | n/a |
+| Sensitivity only | 12 | 12 | 10 | val | 1018 | n/a |
+| Sensitivity only | 12 | 12 | 10 | test | 4269 | n/a |
+
+The `threshold_bps=10` validation sample count is near the lower bound, so it is not a main candidate.
 
 Explicitly excluded from the first baseline rerun:
 
 - `window_size=60`, `label_horizon_k=24`.
 - `window_size=78`, `label_horizon_k=12`.
 - `window_size=78`, `label_horizon_k=24`.
+- `threshold_bps=0` as a main no-trade-band setting.
 - `threshold_bps >= 15`.
 
 ## 4. Data and split contract
 
-- Use the `DataConfig` default split ratio: `train=0.7`, `val=0.15`, `test=0.15`.
-- Do not use the old TensorFlow notebook's `80/10/10` split.
-- Use the five Phase 1B tickers: `CSCO`, `JPM`, `KO`, `MSFT`, `WMT`.
-- Load data from the Colab Drive path:
+Use this data pipeline contract for the rerun:
 
 ```text
 /content/drive/MyDrive/stockdata/Dow_30_1min/
 ```
 
-- Resample and preprocess consistently with prior smoke notebooks if needed.
+- Raw data path: `/content/drive/MyDrive/stockdata/Dow_30_1min/`.
+- Use the five Phase 1B tickers: `CSCO`, `JPM`, `KO`, `MSFT`, `WMT`.
+- Resample OHLCV to the configured bar frequency with `open=first`, `high=max`, `low=min`, `close=last`, and `volume=sum`.
+- Use lowercase columns: `timestamp`, `open`, `high`, `low`, `close`, `volume`.
+- Do not forward fill.
+- Split chronologically per ticker.
+- Use the `DataConfig` default split ratio: `train=0.7`, `val=0.15`, `test=0.15`.
+- Do not use the old TensorFlow notebook's `80/10/10` split.
+- Build labels via `make_no_trade_band_labels`.
+- Skip neutral labels through the existing `NaN` label path.
+- Windows must not cross trading days.
+- Future label horizons must not cross trading days.
+- Fit the scaler on pooled train only, then transform validation and test.
 - The final experiment should call `ml_utils`; it should not define independent notebook-only label, split, scaling, windowing, metric, or training logic.
 
 ## 5. Label contract
@@ -70,25 +92,44 @@ Explicitly excluded from the first baseline rerun:
 - Seed handling should follow existing `ml_utils.seed` behavior.
 - Checkpointing should follow existing `Trainer` and checkpoint behavior.
 
-## 7. Metrics and baseline contract
+## 7. Seed policy
 
-Report the following for each candidate when feasible:
+- The first rerun can use `seed=42`.
+- If any candidate materially beats `dummy_stratified`, rerun the top candidate with seeds `[42, 43, 44]`.
+- Do not claim robustness from one seed.
 
-- `macro_f1`.
-- `balanced_accuracy`.
-- Confusion matrix.
-- `dummy_stratified` mean plus/minus std.
-- `dummy_prior`.
-- `always_up`.
-- `always_down`.
-- `delta_macro_f1_vs_dummy`.
-- `retained_pct`.
+## 8. Metrics and baseline contract
+
+Report one row per candidate, split, ticker scope, and seed when feasible. The result schema should include:
+
+- `candidate_name`.
+- `window_size`.
+- `label_horizon_k`.
+- `threshold_bps`.
+- `split`.
 - `n_valid_windows`.
+- `retained_pct` or window coverage.
+- `n_up`.
+- `n_down`.
+- `up_pct`.
+- `down_pct`.
+- `minority_pct`.
+- `model_macro_f1`.
+- `model_balanced_accuracy`.
+- `model_precision_macro`.
+- `model_recall_macro`.
+- `dummy_stratified_macro_f1_mean`.
+- `dummy_stratified_macro_f1_std`.
+- `dummy_prior_macro_f1`.
+- `always_up_macro_f1`.
+- `always_down_macro_f1`.
+- `delta_macro_f1_vs_dummy`.
+- `confusion_matrix`.
 - Per-ticker results and pooled summary if feasible.
 
 The dummy baselines should be fit on the training labels and evaluated on the target evaluation split. Do not fit baselines on validation or test distributions.
 
-## 8. Colab execution plan
+## 9. Colab execution plan
 
 Future Colab execution should be a thin orchestration layer that pulls the latest repo, mounts Drive, loads the configured data, calls `ml_utils`, and reports the rerun table.
 
@@ -99,7 +140,14 @@ The next execution artifact may be either:
 
 This document does not create that artifact. It also does not create Notebook 03.
 
-## 9. Acceptance criteria for moving to execution
+## 10. Stopping rule
+
+- The first execution should remain small and controlled for Colab.
+- Run the main, secondary, longer-horizon, and long-context stress-test candidates first.
+- Run the `threshold_bps=10` sensitivity candidate only after the main candidates finish.
+- Do not proceed to TCN or DLinear until the LSTM rerun results are reviewed.
+
+## 11. Acceptance criteria for moving to execution
 
 Before the Colab rerun:
 
@@ -110,7 +158,7 @@ Before the Colab rerun:
 - No production code changes are required.
 - There is no unresolved mismatch between the profiling candidates and implementation capabilities.
 
-## 10. Risks / review checklist
+## 12. Risks / review checklist
 
 - `threshold_bps=10` has low validation sample count and is sensitivity only.
 - The longer horizon `label_horizon_k=24` may reduce retained windows and class balance.

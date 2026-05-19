@@ -312,6 +312,8 @@ class WindowedClassificationDataset(Dataset):
     x: torch.Tensor of shape (window_size, num_features)
     y: torch.Tensor scalar containing the class id
     A DataLoader batches x to shape (batch, window_size, num_features).
+    The label is aligned to the last row of the input window to avoid overlap
+    between the input window and the future label horizon.
     """
 
     def __init__(
@@ -359,14 +361,13 @@ class WindowedClassificationDataset(Dataset):
             if max_start < 0:
                 continue
             for local_start_idx in range(0, max_start + 1, stride):
-                if pd.isna(labels[local_start_idx]):
+                target_idx = local_start_idx + window_size - 1
+                if pd.isna(labels[target_idx]):
                     continue
-                window_end_idx = local_start_idx + window_size - 1
-                horizon_end_idx = window_end_idx + label_horizon_k
-                window_dates = dates.iloc[local_start_idx : window_end_idx + 1]
-                if window_dates.nunique() != 1:
+                horizon_end_idx = target_idx + label_horizon_k
+                if dates.iloc[local_start_idx] != dates.iloc[target_idx]:
                     continue
-                if dates.iloc[local_start_idx] != dates.iloc[horizon_end_idx]:
+                if dates.iloc[target_idx] != dates.iloc[horizon_end_idx]:
                     continue
                 self.valid_starts.append((ticker, local_start_idx))
 
@@ -376,8 +377,9 @@ class WindowedClassificationDataset(Dataset):
     def __getitem__(self, idx: int) -> tuple[torch.Tensor, torch.Tensor]:
         ticker, local_start_idx = self.valid_starts[idx]
         local_end_idx = local_start_idx + self.window_size
+        target_idx = local_end_idx - 1
         features = self._features_by_ticker[ticker][local_start_idx:local_end_idx]
-        label = self._labels_by_ticker[ticker][local_start_idx]
+        label = self._labels_by_ticker[ticker][target_idx]
         x = torch.tensor(features, dtype=torch.float32)
         y = torch.tensor(int(label), dtype=torch.long)
         return x, y

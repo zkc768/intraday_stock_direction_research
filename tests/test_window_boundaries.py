@@ -83,10 +83,12 @@ def test_windowed_dataset_does_not_create_input_windows_across_trading_days():
         assert dates.nunique() == 1
 
 
-def test_windowed_dataset_skips_nan_label_starts(split_df_after_trim):
+def test_windowed_dataset_validates_label_at_window_end(split_df_after_trim):
     from ml_utils.dataset import WindowedClassificationDataset
 
     frame = _with_ticker(split_df_after_trim)
+    window_size = 2
+    label_horizon_k = 1
 
     dataset = WindowedClassificationDataset(
         frame,
@@ -94,15 +96,29 @@ def test_windowed_dataset_skips_nan_label_starts(split_df_after_trim):
         label_col="label",
         ticker_col="ticker",
         timestamp_col="timestamp",
-        window_size=2,
-        label_horizon_k=1,
+        window_size=window_size,
+        label_horizon_k=label_horizon_k,
         stride=1,
     )
 
     assert len(dataset) > 0
+    saw_valid_window_with_nan_start_label = False
     for ticker, local_start_idx in dataset.valid_starts:
         ticker_frame = frame[frame["ticker"] == ticker].sort_values("timestamp").reset_index(drop=True)
-        assert not pd.isna(ticker_frame.loc[local_start_idx, "label"])
+        target_idx = local_start_idx + window_size - 1
+        assert not pd.isna(ticker_frame.loc[target_idx, "label"])
+        if pd.isna(ticker_frame.loc[local_start_idx, "label"]):
+            saw_valid_window_with_nan_start_label = True
+    assert saw_valid_window_with_nan_start_label
+
+    valid_starts = set(dataset.valid_starts)
+    for ticker, ticker_frame in frame.groupby("ticker", sort=False):
+        ordered = ticker_frame.sort_values("timestamp").reset_index(drop=True)
+        max_start = len(ordered) - window_size - label_horizon_k
+        for local_start_idx in range(max_start + 1):
+            target_idx = local_start_idx + window_size - 1
+            if pd.isna(ordered.loc[target_idx, "label"]):
+                assert (ticker, local_start_idx) not in valid_starts
     for idx in range(len(dataset)):
         _, y = dataset[idx]
         if hasattr(y, "detach"):

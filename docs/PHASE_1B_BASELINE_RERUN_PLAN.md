@@ -165,3 +165,127 @@ Before the Colab rerun:
 - `window_size=60`, `label_horizon_k=12` is a stress test, not the main baseline.
 - Do not compare no-trade-band retained-subset metrics directly against legacy full-sample metrics without coverage disclosure.
 - Avoid claiming Phase 1B model improvement before architecture changes.
+
+## 13. P1B.9d label-alignment fixed Candidate A smoke result
+
+P1B.9 first exposed label-window alignment leakage in the Candidate A smoke run. The leakage was fixed in:
+
+```text
+e2e2869 fix(dataset): align window labels to prediction point
+```
+
+After that fix, Candidate A was rerun in Colab as a smoke-only check. Do not treat this as a full A-D rerun and do not proceed to TCN or DLinear from this result alone.
+
+### 13.1 Run configuration
+
+```text
+candidate_name = A_main_alignment_fixed_smoke
+window_size = 12
+label_horizon_k = 12
+threshold_bps = 5
+seed = 42
+epochs = 2
+repo_head = e2e2869 fix(dataset): align window labels to prediction point
+output_dir = /content/drive/MyDrive/stockdata/phase1b_lstm_rerun_outputs_alignment_fixed/
+```
+
+Colab guard status:
+
+```text
+Commit guard passed: e2e2869
+P1B.9d guard passed: Candidate A only, seed=42, epochs=2, new output dir.
+```
+
+Selection-bias disclosure printed in Colab:
+
+```text
+No-trade-band binary classification estimates P(sign(r) | X, |r| > tau), not full-market P(sign(r) | X). Report coverage together with F1.
+```
+
+### 13.2 Input and label diagnostics
+
+Raw 5-minute rows:
+
+| ticker | rows | start | end | nan |
+|---|---:|---|---|---:|
+| CSCO | 444305 | 1998-01-02 | 2020-06-08 | 0 |
+| JPM | 443589 | 1998-01-02 | 2020-06-05 | 0 |
+| KO | 443273 | 1998-01-02 | 2020-06-08 | 0 |
+| MSFT | 444322 | 1998-01-02 | 2020-06-05 | 0 |
+| WMT | 443278 | 1998-01-02 | 2020-06-08 | 0 |
+
+Technical-indicator and no-trade-band label diagnostics:
+
+| ticker | 5m_rows | ti_rows | ti_drop | up | down | neutral | retained_pct |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| CSCO | 444305 | 444285 | 20 | 42341 | 45174 | 289042 | 19.70% |
+| JPM | 443589 | 443569 | 20 | 40039 | 41120 | 294694 | 18.30% |
+| KO | 443273 | 443253 | 20 | 21254 | 20136 | 334135 | 9.34% |
+| MSFT | 444322 | 444302 | 20 | 33708 | 34686 | 308192 | 15.39% |
+| WMT | 443278 | 443258 | 20 | 26313 | 26060 | 323157 | 11.82% |
+
+Label diagnostics dicts printed by Colab:
+
+```text
+CSCO {'n_total': 444285, 'n_tail': 12, 'n_cross_day': 67716, 'n_neutral': 289042, 'n_up': 42341, 'n_down': 45174}
+JPM {'n_total': 443569, 'n_tail': 12, 'n_cross_day': 67704, 'n_neutral': 294694, 'n_up': 40039, 'n_down': 41120}
+KO {'n_total': 443253, 'n_tail': 12, 'n_cross_day': 67716, 'n_neutral': 334135, 'n_up': 21254, 'n_down': 20136}
+MSFT {'n_total': 444302, 'n_tail': 12, 'n_cross_day': 67704, 'n_neutral': 308192, 'n_up': 33708, 'n_down': 34686}
+WMT {'n_total': 443258, 'n_tail': 12, 'n_cross_day': 67716, 'n_neutral': 323157, 'n_up': 26313, 'n_down': 26060}
+```
+
+The final summary cell did not recover separate train, validation, and test label distribution variables; it printed them as `None`. Window counts were printed by the training cell:
+
+```text
+train_windows=213,384
+val_windows=11,903
+test_windows=19,190
+```
+
+### 13.3 Training smoke output
+
+```text
+epoch 1 | train_loss=0.696941 | val_loss=0.694377 | val_macro_f1=0.450760 | best=0.450760
+epoch 2 | train_loss=0.692010 | val_loss=0.695803 | val_macro_f1=0.419024 | best=0.450760
+best_val_macro_f1 = 0.4508
+best_epoch = 1
+train_seconds = 103.8
+```
+
+### 13.4 Test split per-ticker results
+
+| ticker | n_valid_windows | n_up | n_down | model_macro_f1 | dummy_stratified_macro_f1_mean | dummy_stratified_macro_f1_std | dummy_prior_macro_f1 | always_up_macro_f1 | always_down_macro_f1 | delta_macro_f1_vs_dummy | confusion_matrix labels=[0,1] |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---|
+| CSCO | 4697 | 2103 | 2594 | 0.5014 | 0.4990 | 0.0062 | 0.3558 | 0.3093 | 0.3558 | 0.0024 | `[[2043, 551], [1554, 549]]` |
+| JPM | 4561 | 2056 | 2505 | 0.4310 | 0.5016 | 0.0074 | 0.3545 | 0.3107 | 0.3545 | -0.0706 | `[[2412, 93], [1879, 177]]` |
+| KO | 2239 | 1006 | 1233 | 0.4936 | 0.4990 | 0.0090 | 0.3551 | 0.3100 | 0.3551 | -0.0053 | `[[1004, 229], [771, 235]]` |
+| MSFT | 4856 | 2135 | 2721 | 0.3908 | 0.4991 | 0.0041 | 0.3591 | 0.3054 | 0.3591 | -0.1083 | `[[2687, 34], [2065, 70]]` |
+| WMT | 2837 | 1374 | 1463 | 0.3621 | 0.5051 | 0.0048 | 0.3402 | 0.3263 | 0.3402 | -0.1430 | `[[1421, 42], [1337, 37]]` |
+
+Ticker-mean summary printed by Colab:
+
+```text
+dummy_stratified_macro_f1_mean: 0.5007495641561069
+dummy_stratified_macro_f1_std: 0.00629495738648912
+test_macro_f1 ticker-mean: 0.4357976294876892
+test_balanced_accuracy ticker-mean: 0.5163990677355137
+delta_macro_f1_vs_dummy: -0.06495193466841775
+```
+
+Leakage check:
+
+```text
+LEAKAGE CHECK PASSED: test_macro_f1 below 0.90 threshold
+```
+
+This is a material change from the leaked run, where macro F1 was abnormally close to 1.0. The post-fix smoke result is near dummy baseline and does not support proceeding directly to broader architecture work. Review this result before any full A-D rerun.
+
+### 13.5 Saved artifacts
+
+Colab printed these saved paths:
+
+```text
+/content/drive/MyDrive/stockdata/phase1b_lstm_rerun_outputs_alignment_fixed/results_A_main_alignment_fixed_smoke.csv
+/content/drive/MyDrive/stockdata/phase1b_lstm_rerun_outputs_alignment_fixed/A_main_alignment_fixed_smoke_summary.json
+/content/drive/MyDrive/stockdata/phase1b_lstm_rerun_outputs_alignment_fixed/A_main_alignment_fixed_smoke_summary.csv
+```

@@ -289,3 +289,80 @@ Colab printed these saved paths:
 /content/drive/MyDrive/stockdata/phase1b_lstm_rerun_outputs_alignment_fixed/A_main_alignment_fixed_smoke_summary.json
 /content/drive/MyDrive/stockdata/phase1b_lstm_rerun_outputs_alignment_fixed/A_main_alignment_fixed_smoke_summary.csv
 ```
+
+## P1B.11b Candidate A Strict Multi-Seed Verification
+
+### Run identity
+
+- phase: P1B.11b
+- script commit: 9619a08 chore(phase1b): add P1B.11b candidate A multiseed script
+- source of truth: P1B.10-derived script
+- candidate: A / main
+- window_size: 12
+- label_horizon_k: 12
+- threshold_bps: 5
+- seeds: [42, 43, 44]
+- output directory: `/content/drive/MyDrive/stockdata/phase1b_lstm_rerun_p1b11b_candidate_a_multiseed/run_20260520T052850Z`
+
+### Pipeline guards
+
+- HEAD in Colab: 9619a08dd8fd18cf4432f4e2cf01ad82df775204
+- required history commit 208d1e3 present
+- e2e2869 label-alignment fix present
+- fresh Colab clone ml_utils import guard passed
+- no TCN/DLinear/Notebook 03 used
+- suspicious metric guard passed
+
+### Window-count guard
+
+For every seed [42, 43, 44]:
+
+- pooled train windows = 213384
+- pooled val windows = 11903
+- pooled test windows = 19190
+
+### Per-seed summary
+
+| seed | mean_model_macro_f1 | mean_dummy_stratified_macro_f1 | mean_delta_macro_f1_vs_dummy | positive_delta_tickers | n_tickers |
+|---:|---:|---:|---:|---:|---:|
+| 42 | 0.5203 | 0.4990 | +0.0213 | 5 | 5 |
+| 43 | 0.5028 | 0.4991 | +0.0038 | 2 | 5 |
+| 44 | 0.4909 | 0.4998 | -0.0089 | 2 | 5 |
+
+### Overall multi-seed summary
+
+| mean_delta_across_seeds | std_delta_across_seeds | mean_model_macro_f1_across_seeds | std_model_macro_f1_across_seeds | positive_delta_tickers_total | total_seed_ticker_runs |
+|---:|---:|---:|---:|---:|---:|
+| +0.0054 | 0.0152 | 0.5047 | 0.0148 | 9 | 15 |
+
+### Coverage / retained-subset reminder
+
+- no-trade-band binary classification estimates P(sign(r) | X, |r| > tau), not P(sign(r) | X)
+- retained-subset metrics must be interpreted together with coverage/window retention
+- retained_pct by ticker in this run:
+  - CSCO: 19.6979%
+  - JPM: 18.2968%
+  - KO: 9.3378%
+  - MSFT: 15.3936%
+  - WMT: 11.8155%
+
+### Interpretation
+
+- P1B.11b validates that P1B.10 Candidate A seed=42 was not caused by pipeline drift.
+- However, the advantage is not stable across seeds.
+- seed 42 is positive on all 5 tickers.
+- seed 43 is only slightly positive overall and positive on 2/5 tickers.
+- seed 44 is negative overall and positive on 2/5 tickers.
+- Overall mean delta is only +0.0054 with std 0.0152.
+- Therefore Candidate A should be described as weak / seed-sensitive / not robustly better than dummy.
+- Do not use P1B.11b as evidence of a strong LSTM signal.
+- This supports keeping LSTM as a weak baseline before TCN/DLinear comparisons.
+
+### Non-actions
+
+- no code changes
+- no ml_utils changes
+- no tests run
+- no Notebook 03
+- no TCN/DLinear
+- no experiment outputs committed

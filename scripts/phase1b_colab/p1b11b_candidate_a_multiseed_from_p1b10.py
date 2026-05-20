@@ -66,7 +66,18 @@ print(SELECTION_BIAS_DISCLOSURE)
 # ## 2. Drive Mount
 
 # %%
-drive.mount("/content/drive")
+# Mount Drive only when running inside a notebook kernel (not in a subprocess).
+# When called via subprocess.run, get_ipython() returns None and drive.mount()
+# crashes with AttributeError on the kernel.
+try:
+    from IPython import get_ipython
+
+    if get_ipython() is not None:
+        drive.mount("/content/drive")
+    else:
+        print("Running outside IPython kernel; Drive assumed already mounted.")
+except Exception:
+    print("Running outside IPython kernel; Drive assumed already mounted.")
 
 
 # %% [markdown]
@@ -93,9 +104,9 @@ def get_clone_url() -> tuple[str, str]:
         colab_token = userdata.get("GH_TOKEN") or userdata.get("GITHUB_TOKEN")
         if colab_token:
             token = colab_token
-    except Exception as exc:
+    except (ImportError, KeyError) as exc:
         print(
-            "No Colab GH_TOKEN/GITHUB_TOKEN secret available; using public clone "
+            "No Colab GH_TOKEN/GITHUB_TOKEN secret available; using env token or public clone "
             f"({type(exc).__name__})."
         )
 
@@ -132,6 +143,7 @@ def run_command(
 ) -> str:
     display_command = safe_command if safe_command is not None else command
     print(f"$ {' '.join(str(part) for part in display_command)}")
+    # GIT_TERMINAL_PROMPT=0 prevents git from hanging on interactive auth prompts
     completed = subprocess.run(
         command,
         cwd=str(cwd) if cwd is not None else None,
@@ -139,6 +151,7 @@ def run_command(
         text=True,
         stdout=subprocess.PIPE,
         stderr=subprocess.STDOUT,
+        env=os.environ | {"GIT_TERMINAL_PROMPT": "0"},
     )
     output = completed.stdout or ""
     safe_output = sanitize_command_output(output)
@@ -198,7 +211,12 @@ if ancestor.returncode != 0:
     )
 print(f"PASS: required commit {REQUIRED_COMMIT} exists and is in HEAD history.")
 
-run_command(["git", "remote", "set-url", "origin", REPO_URL], cwd=REPO_DIR)
+# Keep token-authenticated URL so re-runs don't fail on private repos
+run_command(
+    ["git", "remote", "set-url", "origin", clone_url],
+    cwd=REPO_DIR,
+    safe_command=["git", "remote", "set-url", "origin", safe_clone_url],
+)
 run_command(["git", "remote", "-v"], cwd=REPO_DIR)
 
 print(f"Repo guard PASS: HEAD={GIT_COMMIT_HASH}")
@@ -531,7 +549,7 @@ def add_technical_indicators(frame: pd.DataFrame) -> pd.DataFrame:
     result["bb_pctb"] = (result["close"] - lower_band) / (upper_band - lower_band)
     result["rolling_std_20"] = result["close"].pct_change().rolling(20).std()
 
-    obv_direction = np.sign(result["close"].diff())
+    obv_direction = np.sign(result["close"].diff()).copy()
     obv_direction.iloc[0] = 0
     obv = (obv_direction * result["volume"]).cumsum()
     result["obv_roc"] = obv.pct_change(5)

@@ -366,3 +366,97 @@ For every seed [42, 43, 44]:
 - no Notebook 03
 - no TCN/DLinear
 - no experiment outputs committed
+
+## 14. P1B.18b / P1B.18c Notebook 03 minimal real-data smoke record
+
+Date: 2026-05-21
+
+P1B.18b was a minimal real-data smoke for Notebook 03 helper paths, not a full model comparison. P1B.18c reviewed the pasted P1B.18b output summary and accepted it as PASS WITH WARNINGS. This record does not claim independent Colab verification, independent Drive artifact inspection, robust model signal, or full Notebook 03 comparison readiness.
+
+### 14.1 Scope
+
+- CSCO only.
+- Candidate A only.
+- LSTM only.
+- seed=42 only.
+- max_raw_rows_per_ticker=20000.
+- one epoch only.
+- no artifacts.
+- no `Trainer.fit`.
+- no `run_model_comparison()`.
+- no TCN.
+- no DLinear.
+- no full A-D comparison.
+- no multi-seed run.
+
+### 14.2 Reported pipeline and hygiene
+
+The reported minimal pipeline completed:
+
+```text
+data load -> filter/resample/features -> no-trade-band labels -> windows -> dummy baselines -> one-epoch LSTM train_one_epoch -> evaluate
+```
+
+Reported notebook and repo hygiene:
+
+- cell_count: 25
+- bad_outputs: []
+- bad_exec_counts: []
+- FULL_RUN: False
+- RUN_TRAINING: False
+- final git status: clean
+- final smoke verdict: PASS
+
+Reported Colab smoke environment:
+
+- python: 3.12.13
+- torch: 2.10.0+cpu
+- cuda_available: False
+
+### 14.3 Reported data and window counts
+
+- rows after cap: 20000
+- rows after regular-hours filter: 19950
+- rows after 5-minute resample: 4035
+- rows after feature preparation: 4015
+- rows after no-trade-band labeling: 4015
+- train_windows: 641
+- val_windows: 145
+- test_windows: 161
+
+### 14.4 Reported one-epoch model result
+
+Reported test confusion matrix with `labels=[0, 1]`:
+
+```text
+[[ 0 97]
+ [ 0 64]]
+```
+
+Reported metrics:
+
+- test_macro_f1: 0.2844
+- dummy_stratified test macro F1: 0.5112
+- delta_macro_f1_vs_dummy: -0.2268
+
+Interpretation:
+
+- PASS WITH WARNINGS.
+- The smoke supports that the Notebook 03 helper-driven minimal real-data path can connect to Drive data and complete the scoped smoke.
+- The smoke does not prove robust model signal.
+- The smoke does not prove full Notebook 03 comparison readiness.
+- The smoke does not validate TCN or DLinear.
+- The smoke does not validate the full A-D comparison.
+- The smoke does not validate multi-seed robustness.
+
+### 14.5 Warnings and next step
+
+Warnings:
+
+- The one-epoch LSTM collapsed to always-up.
+- The reported delta versus dummy was negative.
+- The Colab Python and torch environment differs from the local project environment.
+- Drive artifact absence was not independently inspected; only the reported no-artifact non-actions are accepted here.
+- The sample scope was intentionally tiny.
+
+Do not go directly to a full run from this smoke. The recommended next step is P1B.19 full Notebook 03 readiness planning or a narrowly scoped readiness patch/review if blockers are found. Any full comparison must have an explicit execution plan, artifact policy, runtime guard policy, and scope approval.

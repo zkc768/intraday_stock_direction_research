@@ -744,3 +744,159 @@ If P1B.21a passes review, the next controlled expansion should choose exactly on
 - artifact-policy smoke: Candidate A, LSTM only, CSCO only, seed 42, one epoch, artifacts enabled into a fresh run directory.
 
 Do not combine these expansions in one step. Do not jump directly to A-D x three models x five tickers x multi-seed.
+
+## 17. P1B.21a model-axis narrow smoke record
+
+Date: 2026-05-21
+
+P1B.21a was a guarded Notebook 03 model-axis narrow smoke using:
+
+```text
+results = run_model_comparison()
+```
+
+This run used a temporary execution override in Colab/runtime state. The committed notebook source kept safe defaults with `FULL_RUN=False` and `RUN_TRAINING=False`; those flags were flipped only for this execution.
+
+This record supersedes the earlier stale-runtime summary that still showed the old P1B.19b/P1B.20b one-row LSTM result. The valid P1B.21a run is identified by manifest phase `P1B.21a`, manifest git hash `7aad9ad`, three result rows, and selected models `["lstm", "tcn", "dlinear"]`.
+
+### 17.1 Scope
+
+- Candidate A only.
+- LSTM, TCN, and DLinear only.
+- CSCO only.
+- seed=42 only.
+- max_raw_rows_per_ticker=20000.
+- one epoch only.
+- no artifacts.
+- no full A-D validation.
+- no five-ticker validation.
+- no multi-seed robustness claim.
+- no model-signal claim.
+
+### 17.2 Execution config
+
+| field | value |
+|---|---|
+| generated_at_local | `2026-05-21T06:59:52` |
+| entrypoint | `results = run_model_comparison()` |
+| manifest git_commit_hash | `7aad9ad` |
+| FULL_RUN | `True` |
+| RUN_TRAINING | `True` |
+| WRITE_ARTIFACTS | `False` |
+| ALLOW_OVERWRITE | `False` |
+| SELECTED_CANDIDATES | `["A"]` |
+| SELECTED_MODELS | `["lstm", "tcn", "dlinear"]` |
+| SELECTED_TICKERS | `["CSCO"]` |
+| SELECTED_SEEDS | `[42]` |
+| MAX_RAW_ROWS_PER_TICKER | `20000` |
+| MAX_EPOCHS | `1` |
+
+### 17.3 Results table
+
+| model_name | ticker | seed | n_train_windows | n_val_windows | n_test_windows | label_retained_pct | model_macro_f1 | model_balanced_accuracy | dummy_stratified_macro_f1_mean | dummy_stratified_macro_f1_std | dummy_prior_macro_f1 | always_up_macro_f1 | always_down_macro_f1 | delta_macro_f1_vs_dummy | confusion_matrix labels=[0,1] |
+|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---|
+| lstm | CSCO | 42 | 641 | 145 | 161 | 0.304608 | 0.278027 | 0.484375 | 0.511218 | 0.030821 | 0.375969 | 0.284444 | 0.375969 | -0.233191 | `[[0, 97], [2, 62]]` |
+| tcn | CSCO | 42 | 641 | 145 | 161 | 0.304608 | 0.516287 | 0.517880 | 0.511218 | 0.030821 | 0.375969 | 0.284444 | 0.375969 | 0.005069 | `[[55, 42], [34, 30]]` |
+| dlinear | CSCO | 42 | 641 | 145 | 161 | 0.304608 | 0.464939 | 0.468025 | 0.511218 | 0.030821 | 0.375969 | 0.284444 | 0.375969 | -0.046279 | `[[62, 35], [45, 19]]` |
+
+All rows share:
+
+| field | value |
+|---|---|
+| candidate_id | A |
+| candidate_name | main |
+| window_size | 12 |
+| label_horizon_k | 12 |
+| threshold_bps | 5.0 |
+| split | test |
+
+### 17.4 Diagnostics table
+
+| model_name | train_up_pct | train_down_pct | val_up_pct | val_down_pct | test_up_pct | test_down_pct | label_n_total | label_n_retained | label_n_up | label_n_down | label_n_neutral | label_n_cross_day | label_n_tail | model_precision_macro | model_recall_macro | best_epoch | best_val_macro_f1 | training_time_seconds | suspicious_status |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---|
+| lstm | 0.486739 | 0.513261 | 0.4 | 0.6 | 0.397516 | 0.602484 | 4015 | 1223 | 605 | 618 | 2174 | 606 | 12 | 0.194969 | 0.484375 | 1 | 0.347277 | 0.404462 | False |
+| tcn | 0.486739 | 0.513261 | 0.4 | 0.6 | 0.397516 | 0.602484 | 4015 | 1223 | 605 | 618 | 2174 | 606 | 12 | 0.517322 | 0.517880 | 1 | 0.431498 | 0.326727 | False |
+| dlinear | 0.486739 | 0.513261 | 0.4 | 0.6 | 0.397516 | 0.602484 | 4015 | 1223 | 605 | 618 | 2174 | 606 | 12 | 0.465646 | 0.468025 | 1 | 0.390291 | 0.253023 | False |
+
+### 17.5 Manifest summary
+
+| field | value |
+|---|---|
+| notebook | `03_model_comparison.ipynb` |
+| phase | `P1B.21a` |
+| timestamp | `2026-05-21T06:59:52.423369+00:00` |
+| git_commit_hash | `7aad9ad` |
+| run_id | `notebook03_20260521T065950Z_7aad9ad` |
+| planned artifact root | `/content/drive/MyDrive/stockdata/phase1b_notebook03_model_comparison/notebook03_20260521T065950Z_7aad9ad` |
+
+Manifest guards:
+
+| guard | value |
+|---|---|
+| full_run | True |
+| run_training | True |
+| write_artifacts | False |
+| allow_overwrite | False |
+
+Manifest scope:
+
+| scope field | value |
+|---|---|
+| selected_candidates | `A / main / window_size=12 / label_horizon_k=12 / threshold_bps=5` |
+| selected_models | `["lstm", "tcn", "dlinear"]` |
+| selected_tickers | `["CSCO"]` |
+| selected_seeds | `[42]` |
+| max_raw_rows_per_ticker | `20000` |
+| max_epochs | `1` |
+
+### 17.6 Artifact absence evidence
+
+| path/check | exists |
+|---|---|
+| run_dir | False |
+| per_ticker_results | False |
+| summary_by_model | False |
+| summary_by_seed | False |
+| run_manifest | False |
+
+Checked planned artifact paths under:
+
+```text
+/content/drive/MyDrive/stockdata/phase1b_notebook03_model_comparison/notebook03_20260521T065950Z_7aad9ad
+```
+
+This supports the no-artifact contract for this scoped smoke because `WRITE_ARTIFACTS=False` and the planned artifact paths were absent. It does not validate artifact-writing behavior.
+
+### 17.7 Interpretation
+
+- PASS WITH WARNINGS for model-axis guarded entrypoint readiness.
+- Notebook 03 executed the LSTM, TCN, and DLinear registry paths under the narrow A/CSCO/seed-42/one-epoch/no-artifact scope.
+- TCN had a small positive `delta_macro_f1_vs_dummy` of `0.005069`, but this is not a model-signal claim because the run is one ticker, one seed, one epoch, and 20k capped rows.
+- LSTM and DLinear underperformed `dummy_stratified` on macro F1.
+- All diagnostics reported `suspicious_status=False`.
+- No full A-D validation is supported by this run.
+- No five-ticker validation is supported by this run.
+- No multi-seed robustness claim is supported by this run.
+- No artifact-writing policy validation is supported by this run.
+
+### 17.8 Warnings and next step
+
+Warnings:
+
+- A stale Colab runtime initially surfaced the older one-row LSTM result with manifest phase `P1B.19b`; that stale output was rejected and is not the P1B.21a record.
+- Local notebooks may contain execution residue after Colab/VSCode activity and should not be committed as part of this docs-only record.
+- This run validates narrow entrypoint execution only, not model quality.
+
+Recommended next step:
+
+```text
+P1B.21c - clean notebook execution residue, then review/commit this docs-only record
+```
+
+Controlled expansion options after this record is reviewed:
+
+- ticker-axis expansion: Candidate A, all three models, seed 42, one epoch, no artifacts, all five Phase 1B tickers; or
+- candidate-axis expansion: A-D candidates, all three models, CSCO only, seed 42, one epoch, no artifacts; or
+- artifact-policy smoke: Candidate A, one model only, CSCO only, seed 42, one epoch, artifacts enabled into a fresh run directory.
+
+Do not combine these expansions in one step.

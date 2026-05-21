@@ -622,3 +622,125 @@ Non-actions in this record:
 - no Colab
 - no artifacts
 - no further experiments
+
+## 16. P1B.21 staged Notebook 03 readiness plan
+
+Date: 2026-05-21
+
+This is a docs-only plan for the next guarded Notebook 03 readiness run. It is not a Colab execution record and does not authorize a full run.
+
+P1B.20b showed that the guarded `run_model_comparison()` entrypoint can complete a deliberately narrow A/LSTM/CSCO/seed-42/one-epoch smoke without writing artifacts. It also showed that the one-epoch LSTM underperformed `dummy_stratified`, so the next step is readiness coverage, not a model-signal claim.
+
+### 16.1 Remaining unproven scope
+
+The following are still unproven by P1B.20b:
+
+- TCN entrypoint execution.
+- DLinear entrypoint execution.
+- Any result beyond Candidate A.
+- Any result beyond CSCO.
+- Any result beyond seed 42.
+- Any result beyond one epoch.
+- Artifact writing and overwrite safety.
+- Full A-D candidate validation.
+- Full five-ticker validation.
+- Multi-seed robustness.
+- Any model signal claim.
+
+### 16.2 Recommended next rung: P1B.21a model-axis narrow smoke
+
+The next execution should expand only the model axis while keeping all other axes fixed at the P1B.20b narrow scope.
+
+Purpose:
+
+- Validate that Notebook 03 can instantiate and execute all registered model paths through `run_model_comparison()`.
+- Validate only narrow entrypoint readiness for LSTM, TCN, and DLinear.
+- Avoid mixing model-axis validation with candidate, ticker, seed, epoch, or artifact expansion.
+
+Execution scope:
+
+| field | value |
+|---|---|
+| entrypoint | `results = run_model_comparison()` |
+| FULL_RUN | `True` |
+| RUN_TRAINING | `True` |
+| WRITE_ARTIFACTS | `False` |
+| ALLOW_OVERWRITE | `False` |
+| SELECTED_CANDIDATES | `["A"]` |
+| SELECTED_MODELS | `["lstm", "tcn", "dlinear"]` |
+| SELECTED_TICKERS | `["CSCO"]` |
+| SELECTED_SEEDS | `[42]` |
+| MAX_RAW_ROWS_PER_TICKER | `20000` |
+| MAX_EPOCHS | `1` |
+
+Expected result shape:
+
+- 3 result rows: one each for `lstm`, `tcn`, and `dlinear`.
+- 3 diagnostics rows if diagnostics are emitted per result row.
+- No artifact files or run directory.
+
+### 16.3 Required pre-execution checks
+
+Before P1B.21a execution:
+
+- Local `master` must include the P1B.20c/P1B.20f commit.
+- The commit must be pushed before Colab pulls.
+- Colab must show the expected HEAD after pull.
+- The notebook manifest `phase` should be updated to the P1B.21a execution label before the run, or the P1B.21a review must explicitly record any stale phase mismatch.
+- Notebook source must be clean before execution.
+- Outputs and execution counts must not be committed.
+
+### 16.4 P1B.21a pass criteria
+
+P1B.21a may be recorded as PASS WITH WARNINGS if all of the following hold:
+
+- `run_model_comparison()` completes without exception.
+- The result table contains exactly the intended model set: `lstm`, `tcn`, and `dlinear`.
+- Each model row is limited to Candidate A, CSCO, seed 42, split `test`.
+- `MAX_RAW_ROWS_PER_TICKER=20000` and `MAX_EPOCHS=1` are confirmed.
+- `WRITE_ARTIFACTS=False` is confirmed.
+- Planned artifact paths are independently checked as absent.
+- `suspicious_status=False` for all emitted diagnostics, if present.
+- Confusion matrices are recorded with `labels=[0, 1]`.
+- The review explicitly states that this does not validate full A-D, all tickers, multi-seed robustness, or model signal.
+
+### 16.5 Stop conditions
+
+Stop and review before any broader run if:
+
+- TCN or DLinear fails to instantiate.
+- Any selected model silently drops from the output.
+- Any result row appears outside Candidate A / CSCO / seed 42.
+- Artifacts are written unexpectedly.
+- The manifest phase is stale and not documented.
+- The notebook becomes dirty with ad hoc execution cells.
+- Any suspicious metric guard fires.
+- Runtime or memory looks incompatible with scaling the next rung.
+
+### 16.6 Anti-overclaiming rules
+
+P1B.21a must not be described as:
+
+- full Notebook 03 validation.
+- full A-D validation.
+- five-ticker validation.
+- multi-seed validation.
+- evidence that TCN or DLinear has signal.
+- evidence that any model beats dummy.
+- artifact policy validation.
+
+The only intended claim is:
+
+```text
+Notebook 03 guarded entrypoint can execute the model registry paths for LSTM, TCN, and DLinear under the narrow A/CSCO/seed-42/one-epoch/no-artifact smoke scope.
+```
+
+### 16.7 Next rung after P1B.21a
+
+If P1B.21a passes review, the next controlled expansion should choose exactly one axis:
+
+- ticker-axis expansion: Candidate A, seed 42, one epoch, no artifacts, all five Phase 1B tickers; or
+- candidate-axis expansion: A-D candidates, CSCO only, seed 42, one epoch, no artifacts; or
+- artifact-policy smoke: Candidate A, LSTM only, CSCO only, seed 42, one epoch, artifacts enabled into a fresh run directory.
+
+Do not combine these expansions in one step. Do not jump directly to A-D x three models x five tickers x multi-seed.

@@ -460,3 +460,165 @@ Warnings:
 - The sample scope was intentionally tiny.
 
 Do not go directly to a full run from this smoke. The recommended next step is P1B.19 full Notebook 03 readiness planning or a narrowly scoped readiness patch/review if blockers are found. Any full comparison must have an explicit execution plan, artifact policy, runtime guard policy, and scope approval.
+
+## 15. P1B.20b guarded entrypoint narrow smoke record
+
+Date: 2026-05-21
+
+P1B.20b was a guarded Notebook 03 entrypoint smoke using:
+
+```text
+results = run_model_comparison()
+```
+
+This was not a helper-path smoke, not a full A-D run, and not evidence of model signal. It only reviewed whether the guarded `run_model_comparison()` entrypoint can complete a deliberately narrow real-data run without writing artifacts.
+
+### 15.1 Scope
+
+- Candidate A only.
+- LSTM only.
+- CSCO only.
+- seed=42 only.
+- max_raw_rows_per_ticker=20000.
+- one epoch only.
+- no artifacts.
+- no TCN.
+- no DLinear.
+- no full A-D validation.
+- no multi-seed robustness claim.
+
+### 15.2 Execution config
+
+| field | value |
+|---|---|
+| repo HEAD | `765bc41b0e4db0eff8cc1f585c7b008261f69b96` |
+| Colab git status | `## master...origin/master` |
+| FULL_RUN | `True` |
+| RUN_TRAINING | `True` |
+| WRITE_ARTIFACTS | `False` |
+| ALLOW_OVERWRITE | `False` |
+| SELECTED_CANDIDATES | `["A"]` |
+| SELECTED_MODELS | `["lstm"]` |
+| SELECTED_TICKERS | `["CSCO"]` |
+| SELECTED_SEEDS | `[42]` |
+| MAX_RAW_ROWS_PER_TICKER | `20000` |
+| MAX_EPOCHS | `1` |
+
+Although `FULL_RUN=True` and `RUN_TRAINING=True` were enabled to exercise the guarded entrypoint, the selection gates narrowed the execution to one candidate, one model, one ticker, one seed, and one epoch. This must not be described as full Notebook 03 comparison validation.
+
+### 15.3 Results table
+
+| field | value |
+|---|---:|
+| candidate_id | A |
+| candidate_name | main |
+| model_name | lstm |
+| ticker | CSCO |
+| seed | 42 |
+| window_size | 12 |
+| label_horizon_k | 12 |
+| threshold_bps | 5.0 |
+| split | test |
+| n_train_windows | 641 |
+| n_val_windows | 145 |
+| n_test_windows | 161 |
+| label_retained_pct | 0.304608 |
+| model_macro_f1 | 0.278027 |
+| model_balanced_accuracy | 0.484375 |
+| dummy_stratified_macro_f1_mean | 0.511218 |
+| dummy_stratified_macro_f1_std | 0.030821 |
+| dummy_prior_macro_f1 | 0.375969 |
+| always_up_macro_f1 | 0.284444 |
+| always_down_macro_f1 | 0.375969 |
+| delta_macro_f1_vs_dummy | -0.233191 |
+
+Confusion matrix with `labels=[0, 1]`:
+
+```text
+[[0, 97], [2, 62]]
+```
+
+### 15.4 Diagnostics table
+
+| field | value |
+|---|---:|
+| train_up_pct | 0.486739 |
+| train_down_pct | 0.513261 |
+| val_up_pct | 0.4 |
+| val_down_pct | 0.6 |
+| test_up_pct | 0.397516 |
+| test_down_pct | 0.602484 |
+| label_n_total | 4015 |
+| label_n_retained | 1223 |
+| label_n_up | 605 |
+| label_n_down | 618 |
+| label_n_neutral | 2174 |
+| label_n_cross_day | 606 |
+| label_n_tail | 12 |
+| model_precision_macro | 0.194969 |
+| model_recall_macro | 0.484375 |
+| best_epoch | 1 |
+| best_val_macro_f1 | 0.347277 |
+| training_time_seconds | 0.592459 |
+| suspicious_status | False |
+
+### 15.5 Manifest summary
+
+| field | value |
+|---|---|
+| notebook | `03_model_comparison.ipynb` |
+| phase | `P1B.19b` |
+| timestamp | `2026-05-21T05:55:44.324349+00:00` |
+| git_commit_hash | `765bc41` |
+| run_id | `notebook03_20260521T055543Z_765bc41` |
+| planned artifact root | `/content/drive/MyDrive/stockdata/phase1b_notebook03_model_comparison/notebook03_20260521T055543Z_765bc41` |
+
+### 15.6 Artifact absence evidence
+
+| path/check | exists |
+|---|---|
+| run_dir | False |
+| per_ticker_results | False |
+| summary_by_model | False |
+| summary_by_seed | False |
+| run_manifest | False |
+
+This supports the no-artifact contract for this scoped smoke because `WRITE_ARTIFACTS=False` and the planned artifact paths were absent.
+
+### 15.7 Interpretation
+
+- PASS WITH WARNINGS for guarded entrypoint readiness.
+- The one-epoch LSTM underperformed `dummy_stratified` on test macro F1.
+- The one-epoch LSTM mostly predicted class 1, with confusion matrix `[[0, 97], [2, 62]]`.
+- No model signal claim is supported by this run.
+- No TCN or DLinear validation is supported by this run.
+- No full A-D validation is supported by this run.
+- No multi-seed robustness claim is supported by this run.
+
+### 15.8 Warnings and next step
+
+Warnings:
+
+- The manifest `phase` field still says `P1B.19b`, even though this execution is P1B.20b. Correct this in a future notebook patch.
+- The local notebook file may be dirty from VSCode/Colab execution cells and should not be committed as part of this docs-only record.
+
+Recommended next step:
+
+```text
+P1B.20d - clean notebook execution residue or review-only decide whether to discard notebook changes
+```
+
+Non-actions in this record:
+
+- no git add
+- no commit
+- no push
+- no notebook edits
+- no `ml_utils` changes
+- no tests changes
+- no prompts changes
+- no notebook execution
+- no training
+- no Colab
+- no artifacts
+- no further experiments

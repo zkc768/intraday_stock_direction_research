@@ -52,7 +52,7 @@ class 1 = "up"       ← future_avg_r_t > 0
 - 最后 k 行 `future_avg_r` 为 NaN → label 也为 NaN。**保留这些 NaN 作为后续阶段的 invalid marker**：
   - `trim_labels_at_split_boundary` 在 split 边界**追加 NaN 标注**，不删除行
   - 跨交易日 horizon 同样通过 NaN 标注实现（具体函数边界见 §3.4 Stage 3 与 plan v2 §5.3）
-  - `WindowedClassificationDataset` 构造窗口时跳过所有 label==NaN 的起点
+  - `WindowedClassificationDataset` 构造窗口时跳过所有窗口末端 label==NaN 的窗口；窗口末端定义为 `target_idx = start + window_size - 1`
   - 任何阶段均不许 `fillna`、不许 `dropna` 删行
 - 禁止变体：几何平均 `(price_{t+k}/price_t)^(1/k) - 1`、总收益 `(price_{t+k} - price_t)/price_t`、阈值化为三分类（up/flat/down）
 - 要切换公式 → 停下问
@@ -105,7 +105,7 @@ dummy baseline 必须 fit 在 `y_train` 上、evaluate 在 `y_eval` 上，禁止
 1. train / val / test 切分必须按时间顺序进行，禁止任何形式的 random shuffle 切分
 2. Scaler 只在 train segment fit，再 transform 到 val / test
 3. 多股票合并 fit 一个全局 scaler，但合并前每只股票必须各自完成时间切分
-4. 标签窗口（未来 k bar 均 return）跨越 split 边界的样本必须被**标记为 invalid 并跳过**：实现上通过 `label=NaN` 标注（由 `trim_labels_at_split_boundary` 在 split 边界追加 NaN），`WindowedClassificationDataset` 构造窗口时跳过所有 `label==NaN` 起点。**不许 dropna 删行**（与 §3.4 Stage 2/3、§2.2.1 一致）
+4. 标签窗口（未来 k bar 均 return）跨越 split 边界的样本必须被**标记为 invalid 并跳过**：实现上通过 `label=NaN` 标注（由 `trim_labels_at_split_boundary` 在 split 边界追加 NaN），`WindowedClassificationDataset` 构造窗口时跳过所有窗口末端 `label==NaN` 的窗口。窗口末端定义为 `target_idx = start + window_size - 1`。**不许 dropna 删行**（与 §3.4 Stage 2/3、§2.2.1 一致）
 5. 训练集内部允许 DataLoader 的 batch-level shuffle，但仅限"窗口已切进 train 之后"
 6. pooled 多股票时，窗口生成必须 per-ticker，禁止跨股票窗口
 7. `__init__` 或 setup 阶段禁止对全量数据计算统计量
@@ -172,7 +172,7 @@ dummy baseline 必须 fit 在 `y_train` 上、evaluate 在 `y_eval` 上，禁止
 - label NaN 现在还可以来自：
   2. split 边界（由 `trim_labels_at_split_boundary` 标注）
   3. 跨交易日边界（label horizon 跨日的样本，由跨日过滤标注）
-- 构造窗口时，所有 label==NaN 的起点必须被跳过（dataset.py 内部保证）
+- 构造窗口时，所有窗口末端 label==NaN 的窗口必须被跳过（dataset.py 内部保证）。窗口末端定义为 `target_idx = start + window_size - 1`；`Dataset.__getitem__` 返回该位置的 label，表示“已观察到窗口末端后预测未来 k bar”
 
 列名大小写约定：全小写（`open`、`high`、`low`、`close`、`volume`），由 config 锁定。
 

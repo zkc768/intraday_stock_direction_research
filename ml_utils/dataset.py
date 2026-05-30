@@ -66,17 +66,44 @@ def _validate_strict_timestamp_order(df: pd.DataFrame, timestamp_col: str, conte
         duplicate_rows = df.index[df[timestamp_col].duplicated(keep=False)].tolist()
         raise ValueError(f"{context} timestamp column {timestamp_col!r} has duplicates at rows {duplicate_rows}")
     if not df[timestamp_col].is_monotonic_increasing:
+        timestamps = df[timestamp_col]
+        for position in range(1, len(timestamps)):
+            previous_timestamp = timestamps.iloc[position - 1]
+            current_timestamp = timestamps.iloc[position]
+            if pd.isna(previous_timestamp) or pd.isna(current_timestamp) or current_timestamp <= previous_timestamp:
+                previous_row = timestamps.index[position - 1]
+                current_row = timestamps.index[position]
+                raise ValueError(
+                    f"{context} timestamp column {timestamp_col!r} must be strictly increasing; "
+                    f"offending row/index {current_row!r} at position {position} has current timestamp "
+                    f"{current_timestamp!r} <= previous timestamp {previous_timestamp!r} "
+                    f"at row/index {previous_row!r} position {position - 1}"
+                )
         raise ValueError(f"{context} timestamp column {timestamp_col!r} must be strictly increasing")
 
 
-def _validate_binary_label_values(df: pd.DataFrame, label_col: str, context: str) -> None:
+def _validate_binary_label_values(
+    df: pd.DataFrame,
+    label_col: str,
+    context: str,
+    ticker_col: str | None = None,
+) -> None:
     _require_columns(df, [label_col], context)
     if not is_numeric_dtype(df[label_col]):
         raise ValueError(f"{context} label column {label_col!r} must be numeric")
-    values = set(df[label_col].dropna().astype(float).unique())
-    invalid_values = values.difference({0.0, 1.0})
-    if invalid_values:
-        raise ValueError(f"{context} label column {label_col!r} contains values outside {{0, 1, NaN}}")
+    non_na_labels = df[label_col][df[label_col].notna()]
+    invalid_mask = ~non_na_labels.astype(float).isin([0.0, 1.0])
+    if invalid_mask.any():
+        bad_index = invalid_mask[invalid_mask].index[0]
+        invalid_value = df.loc[bad_index, label_col]
+        ticker_message = ""
+        if ticker_col is not None:
+            ticker_value = df.loc[bad_index, ticker_col]
+            ticker_message = f" ticker {ticker_value!r}"
+        raise ValueError(
+            f"{context}{ticker_message} label column {label_col!r} contains invalid value "
+            f"{invalid_value} at offending row/index {bad_index!r}; expected one of {{0, 1, NaN}}"
+        )
 
 
 def _infer_datetime_column(df: pd.DataFrame) -> str | None:
@@ -253,6 +280,41 @@ def transform_split(
     return result
 
 
+def _trim_groups(
+    df: pd.DataFrame,
+    ticker_col: str | None,
+    context: str,
+) -> list[tuple[Any | None, pd.DataFrame]]:
+    if ticker_col is None:
+        return [(None, df)]
+    _require_columns(df, [ticker_col], context)
+    return [(ticker, group) for ticker, group in df.groupby(ticker_col, sort=False)]
+
+
+def _ordered_trim_group(
+    group: pd.DataFrame,
+    timestamp_col: str | None,
+    context: str,
+) -> pd.DataFrame:
+    if timestamp_col is None:
+        return group
+    _validate_strict_timestamp_order(group, timestamp_col, context)
+    return group
+
+
+def _mark_cross_day_horizon_labels(
+    result: pd.DataFrame,
+    positions: list[Any],
+    dates: pd.Series,
+    label_horizon_k: int,
+    label_col: str,
+) -> None:
+    for local_idx in range(max(len(positions) - label_horizon_k, 0)):
+        horizon_idx = local_idx + label_horizon_k
+        if dates.iloc[local_idx] != dates.iloc[horizon_idx]:
+            result.loc[positions[local_idx], label_col] = np.nan
+
+
 def trim_labels_at_split_boundary(
     df: pd.DataFrame,
     label_horizon_k: int,
@@ -266,7 +328,12 @@ def trim_labels_at_split_boundary(
     _check_positive_int(label_horizon_k, "label_horizon_k")
     result = df.copy(deep=True)
     resolved_label_col = label_col
-    _validate_binary_label_values(result, resolved_label_col, "trim_labels_at_split_boundary")
+    _validate_binary_label_values(
+        result,
+        resolved_label_col,
+        "trim_labels_at_split_boundary",
+        ticker_col,
+    )
     resolved_timestamp_col = timestamp_col if timestamp_col is not None else _infer_datetime_column(result)
     if resolved_timestamp_col is not None:
         _validate_timestamp_dtype_and_timezone(
@@ -276,33 +343,86 @@ def trim_labels_at_split_boundary(
             "trim_labels_at_split_boundary",
         )
 
-    if ticker_col is not None:
-        _require_columns(result, [ticker_col], "trim_labels_at_split_boundary")
-        groups = [group for _, group in result.groupby(ticker_col, sort=False)]
-    else:
-        groups = [result]
-
-    for group in groups:
-        if resolved_timestamp_col is not None:
-            ordered_group = group.sort_values(resolved_timestamp_col)
-            _validate_strict_timestamp_order(
-                ordered_group,
-                resolved_timestamp_col,
-                "trim_labels_at_split_boundary",
-            )
-        else:
-            ordered_group = group
+    for ticker, group in _trim_groups(result, ticker_col, "trim_labels_at_split_boundary"):
+        context = "trim_labels_at_split_boundary"
+        if ticker_col is not None:
+            context = f"{context} ticker {ticker!r}"
+        ordered_group = _ordered_trim_group(
+            group,
+            resolved_timestamp_col,
+            context,
+        )
         positions = list(ordered_group.index)
         tail_positions = positions[-label_horizon_k:]
         result.loc[tail_positions, resolved_label_col] = np.nan
         if resolved_timestamp_col is None:
             continue
         dates = ordered_group[resolved_timestamp_col].dt.date.reset_index(drop=True)
-        for local_idx in range(max(len(ordered_group) - label_horizon_k, 0)):
-            horizon_idx = local_idx + label_horizon_k
-            if dates.iloc[local_idx] != dates.iloc[horizon_idx]:
-                result.loc[positions[local_idx], resolved_label_col] = np.nan
+        _mark_cross_day_horizon_labels(result, positions, dates, label_horizon_k, resolved_label_col)
     return result
+
+
+def _validate_windowed_dataset_inputs(
+    df: pd.DataFrame,
+    feature_cols: list[str],
+    label_col: str,
+    ticker_col: str,
+    timestamp_col: str,
+    window_size: int,
+    label_horizon_k: int,
+    stride: int,
+) -> None:
+    _check_positive_int(window_size, "window_size")
+    _check_positive_int(label_horizon_k, "label_horizon_k")
+    _check_positive_int(stride, "stride")
+    if not feature_cols:
+        raise ValueError("feature_cols must be non-empty")
+    required_columns = [*feature_cols, label_col, ticker_col, timestamp_col]
+    _require_columns(df, required_columns, "WindowedClassificationDataset")
+    _require_numeric_columns(df, feature_cols, "WindowedClassificationDataset")
+    _validate_binary_label_values(df, label_col, "WindowedClassificationDataset", ticker_col)
+    if not is_datetime64_any_dtype(df[timestamp_col]):
+        raise ValueError(f"timestamp column {timestamp_col!r} must be datetime dtype")
+    for ticker, ticker_df in df.groupby(ticker_col, sort=False):
+        _validate_strict_timestamp_order(
+            ticker_df,
+            timestamp_col,
+            f"WindowedClassificationDataset ticker {ticker!r}",
+        )
+
+
+def _window_start_is_valid(
+    labels: np.ndarray,
+    dates: pd.Series,
+    local_start_idx: int,
+    window_size: int,
+    label_horizon_k: int,
+) -> bool:
+    target_idx = local_start_idx + window_size - 1
+    if pd.isna(labels[target_idx]):
+        return False
+    horizon_end_idx = target_idx + label_horizon_k
+    return (
+        dates.iloc[local_start_idx] == dates.iloc[target_idx]
+        and dates.iloc[target_idx] == dates.iloc[horizon_end_idx]
+    )
+
+
+def _valid_window_starts_for_ticker(
+    labels: np.ndarray,
+    dates: pd.Series,
+    window_size: int,
+    label_horizon_k: int,
+    stride: int,
+) -> list[int]:
+    max_start = len(labels) - window_size - label_horizon_k
+    if max_start < 0:
+        return []
+    return [
+        local_start_idx
+        for local_start_idx in range(0, max_start + 1, stride)
+        if _window_start_is_valid(labels, dates, local_start_idx, window_size, label_horizon_k)
+    ]
 
 
 class WindowedClassificationDataset(Dataset):
@@ -327,16 +447,16 @@ class WindowedClassificationDataset(Dataset):
         label_horizon_k: int,
         stride: int = 1,
     ) -> None:
-        _check_positive_int(window_size, "window_size")
-        _check_positive_int(label_horizon_k, "label_horizon_k")
-        _check_positive_int(stride, "stride")
-        if not feature_cols:
-            raise ValueError("feature_cols must be non-empty")
-        required_columns = [*feature_cols, label_col, ticker_col, timestamp_col]
-        _require_columns(df, required_columns, "WindowedClassificationDataset")
-        _require_numeric_columns(df, feature_cols, "WindowedClassificationDataset")
-        if not is_datetime64_any_dtype(df[timestamp_col]):
-            raise ValueError(f"timestamp column {timestamp_col!r} must be datetime dtype")
+        _validate_windowed_dataset_inputs(
+            df,
+            feature_cols,
+            label_col,
+            ticker_col,
+            timestamp_col,
+            window_size,
+            label_horizon_k,
+            stride,
+        )
 
         self.feature_cols = list(feature_cols)
         self.label_col = label_col
@@ -357,19 +477,14 @@ class WindowedClassificationDataset(Dataset):
 
             self._features_by_ticker[ticker] = features
             self._labels_by_ticker[ticker] = labels
-            max_start = len(ordered) - window_size - label_horizon_k
-            if max_start < 0:
-                continue
-            for local_start_idx in range(0, max_start + 1, stride):
-                target_idx = local_start_idx + window_size - 1
-                if pd.isna(labels[target_idx]):
-                    continue
-                horizon_end_idx = target_idx + label_horizon_k
-                if dates.iloc[local_start_idx] != dates.iloc[target_idx]:
-                    continue
-                if dates.iloc[target_idx] != dates.iloc[horizon_end_idx]:
-                    continue
-                self.valid_starts.append((ticker, local_start_idx))
+            valid_starts = _valid_window_starts_for_ticker(
+                labels,
+                dates,
+                window_size,
+                label_horizon_k,
+                stride,
+            )
+            self.valid_starts.extend((ticker, local_start_idx) for local_start_idx in valid_starts)
 
     def __len__(self) -> int:
         return len(self.valid_starts)

@@ -74,6 +74,7 @@ hf_stock_clf/
 │   ├── test_dataset_leakage.py
 │   ├── test_label_generation.py
 │   ├── test_window_boundaries.py
+│   ├── test_window_label_alignment.py
 │   ├── test_checkpoint.py
 │   └── test_models_shape.py
 ├── reference_excerpts/            Extracted from external repos, read-only reference
@@ -480,7 +481,7 @@ Returns a pd.DataFrame with column order determined by the notebook 03 spec.
 - **Reference Tier**: Tier 1 (must read reference implementation)
 - **Reference File**: `reference_excerpts/ltsf_data_loader.py`
 - **Line Budget**: 500 lines
-- **Test Files**: `tests/test_dataset_leakage.py`, `tests/test_label_generation.py`, `tests/test_window_boundaries.py`
+- **Test Files**: `tests/test_dataset_leakage.py`, `tests/test_label_generation.py`, `tests/test_window_boundaries.py`, `tests/test_window_label_alignment.py`
 
 **This is the most important module in the entire library. Write tests in full before implementing.**
 
@@ -513,7 +514,7 @@ Schema validation is executed in three stages. Each stage must be explicitly val
 
 - All Stage 2 constraints still hold
 - Label NaN may now also come from split boundary trim and cross-trading-day horizon filtering
-- When constructing windows, all starting points where label==NaN must be skipped
+- When constructing windows, all windows whose window-end label is NaN must be skipped. Window end is `target_idx = start + window_size - 1`; `Dataset.__getitem__` returns that label, meaning the model observes the full input window and predicts the future horizon after the window end.
 
 #### 5.3.2 Functions and Classes
 
@@ -632,7 +633,7 @@ class WindowedClassificationDataset(torch.utils.data.Dataset):
 - Initialization only builds the index, no feature computation
 - For each ticker, generates valid window starting points:
   - Starting point t must satisfy `t + window_size - 1 + label_horizon_k < len(ticker_df)`
-  - Label at starting point t is not NaN
+  - Label at window end `t + window_size - 1` is not NaN
   - All time steps within the window belong to the same ticker
 - Merges all tickers' valid starting points into a list of `(ticker, local_start_idx)`
 - `__getitem__` returns:
@@ -665,7 +666,7 @@ class WindowedClassificationDataset(torch.utils.data.Dataset):
 
 #### 5.3.5 Required Tests
 
-Tests are distributed across three files (implementation sessions may modify all three, per AGENTS.md §7.1):
+Tests are distributed across four files (implementation sessions may modify all four, per AGENTS.md §7.1):
 
 `tests/test_dataset_leakage.py`:
 
@@ -681,12 +682,19 @@ Tests are distributed across three files (implementation sessions may modify all
 
 `tests/test_window_boundaries.py`:
 
-7. Boundary invalid label test (跨边界 invalid 标注测试): label-horizon samples that cross split boundaries are marked as label NaN by `trim_labels_at_split_boundary`, and `WindowedClassificationDataset` must not generate windows from those NaN label starting points.
+7. Boundary invalid label test (跨边界 invalid 标注测试): label-horizon samples that cross split boundaries are marked as label NaN by `trim_labels_at_split_boundary`, and `WindowedClassificationDataset` must not generate windows whose window-end label is NaN.
 8. **Cross-trading-day window test**: `test_no_window_crosses_trading_day` — all timestamps within any window have identical `.dt.date`
-9. **Cross-trading-day label horizon test**: `test_no_label_horizon_crosses_trading_day` — the `date(t)` of starting point t equals `date(t + window_size - 1 + label_horizon_k)`
+9. **Cross-trading-day label horizon test**: `test_no_label_horizon_crosses_trading_day` — the input window stays within one trading day, and the window-end date equals `date(t + window_size - 1 + label_horizon_k)`
 10. Stage 1 schema validation: construct illegal raw DataFrames (tz mismatch, price contains 0, timestamp non-increasing, feature contains NaN) and verify `raise ValueError` with field name in message
 11. Stage 2 schema validation: label NaN appearing in non-tail-k positions raises error
-12. Stage 3 schema validation: window construction skips label==NaN starting points
+12. Stage 3 schema validation: window construction skips windows whose window-end label is NaN
+
+`tests/test_window_label_alignment.py`:
+
+13. `__getitem__` returns the label at the window end, not the window start
+14. A NaN start label does not reject a window when the window-end label is valid
+15. A NaN window-end label rejects the window even when the start label is valid
+16. Cross-day label horizon checks are anchored at the window end
 
 
 ---
@@ -1132,7 +1140,8 @@ Strict rules — violating any of these means stop and ask:
 [Scope]
 1. Implement exactly one file: ml_utils/dataset.py
 2. Do not create, modify, or touch any other file (except tests/test_dataset_leakage.py,
-   tests/test_label_generation.py, tests/test_window_boundaries.py).
+   tests/test_label_generation.py, tests/test_window_boundaries.py,
+   tests/test_window_label_alignment.py).
 3. Do not add convenience scripts, examples, or README updates.
 
 [Imports]

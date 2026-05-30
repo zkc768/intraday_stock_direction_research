@@ -110,6 +110,33 @@ def test_no_trade_band_default_threshold_remains_five_bps():
     assert runner.resolve_threshold_bps(_args("no_trade_band"), "no_trade_band") == 5.0
 
 
+def test_protocol_metadata_locks_mentor_clean_fixed_5bps_route():
+    metadata = runner.protocol_metadata_fields(
+        "mentor_clean_v1",
+        "no_trade_band",
+        threshold_bps=5.0,
+        cli_threshold_bps=5.0,
+    )
+
+    assert metadata == {
+        "decision_time_policy": "post_bar_close_completed_bar",
+        "scaler_id": "standard_pooled_train_only_v1",
+        "scaler_fit_scope": "pooled_train_after_per_ticker_chronological_split",
+        "threshold_source": "fixed_pre_registered_5bps",
+    }
+
+
+def test_protocol_metadata_marks_default_no_trade_threshold_separately():
+    metadata = runner.protocol_metadata_fields(
+        "mentor_clean_v1",
+        "no_trade_band",
+        threshold_bps=5.0,
+        cli_threshold_bps=None,
+    )
+
+    assert metadata["threshold_source"] == "default_fixed_5bps"
+
+
 def test_audit_scope_fields_label_smoke_metrics_as_non_claim():
     fields = runner.audit_scope_fields("smoke")
 
@@ -984,12 +1011,15 @@ def test_sklearn_validation_only_cli_marks_metadata_and_result_scope(
         observed["c_grid"] = c_grid
         observed["class_weights"] = class_weights
         observed["metadata_report_scope"] = metadata["report_scope"]
+        observed["decision_time_policy"] = metadata["decision_time_policy"]
+        observed["scaler_id"] = metadata["scaler_id"]
+        observed["scaler_fit_scope"] = metadata["scaler_fit_scope"]
+        observed["threshold_source"] = metadata["threshold_source"]
         return [
             {
+                **runner.base_result_fields(metadata, candidate),
+                **runner.validation_only_report_fields(),
                 "model_name": "sklearn_logreg_l2",
-                "report_scope": "validation_only",
-                "test_metrics_embargoed": True,
-                "test_metrics_used": False,
             }
         ]
 
@@ -1002,7 +1032,11 @@ def test_sklearn_validation_only_cli_marks_metadata_and_result_scope(
             "--sklearn-baseline",
             "--validation-only-report",
             "--feature-set",
-            "technical_v1",
+            "mentor_clean_v1",
+            "--label-mode",
+            "no_trade_band",
+            "--threshold-bps",
+            "5.0",
             "--tickers",
             "AAA",
             "--output-dir",
@@ -1018,6 +1052,10 @@ def test_sklearn_validation_only_cli_marks_metadata_and_result_scope(
         "c_grid": runner.SKLEARN_LOGREG_C_GRID,
         "class_weights": runner.SKLEARN_LOGREG_CLASS_WEIGHTS,
         "metadata_report_scope": "validation_only",
+        "decision_time_policy": "post_bar_close_completed_bar",
+        "scaler_id": "standard_pooled_train_only_v1",
+        "scaler_fit_scope": "pooled_train_after_per_ticker_chronological_split",
+        "threshold_source": "fixed_pre_registered_5bps",
     }
     metadata_path = next((tmp_path / "out").rglob("metadata.json"))
     metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
@@ -1025,9 +1063,16 @@ def test_sklearn_validation_only_cli_marks_metadata_and_result_scope(
     assert metadata["selection_scope"] == "validation_only"
     assert metadata["test_metrics_embargoed"] is True
     assert metadata["test_metrics_used"] is False
+    assert metadata["decision_time_policy"] == "post_bar_close_completed_bar"
+    assert metadata["scaler_id"] == "standard_pooled_train_only_v1"
+    assert metadata["scaler_fit_scope"] == "pooled_train_after_per_ticker_chronological_split"
+    assert metadata["threshold_source"] == "fixed_pre_registered_5bps"
     results = pd.read_csv(next((tmp_path / "out").rglob("results.csv")))
     assert results.loc[0, "report_scope"] == "validation_only"
     assert bool(results.loc[0, "test_metrics_embargoed"]) is True
+    assert results.loc[0, "decision_time_policy"] == "post_bar_close_completed_bar"
+    assert results.loc[0, "scaler_id"] == "standard_pooled_train_only_v1"
+    assert results.loc[0, "threshold_source"] == "fixed_pre_registered_5bps"
 
 
 def test_validation_only_report_rejects_torch_model_family(monkeypatch):
@@ -1067,6 +1112,312 @@ def test_validation_only_per_ticker_requires_validation_only_report(monkeypatch)
 
     with pytest.raises(ValueError, match="validation-only-per-ticker"):
         runner.main()
+
+
+def test_lightgbm_requires_validation_only_report(monkeypatch):
+    monkeypatch.setattr(
+        runner,
+        "prepare_data",
+        lambda **kwargs: pytest.fail("invalid LightGBM mode should stop early"),
+    )
+    monkeypatch.setattr(
+        "sys.argv",
+        [
+            "local_baseline_matrix.py",
+            "--model-family",
+            "lightgbm",
+        ],
+    )
+
+    with pytest.raises(ValueError, match="lightgbm requires --validation-only-report"):
+        runner.main()
+
+
+def test_lightgbm_rejects_full_run_before_prepare_data(monkeypatch):
+    monkeypatch.setattr(
+        runner,
+        "prepare_data",
+        lambda **kwargs: pytest.fail("invalid LightGBM full-run should stop early"),
+    )
+    monkeypatch.setattr(
+        "sys.argv",
+        [
+            "local_baseline_matrix.py",
+            "--model-family",
+            "lightgbm",
+            "--validation-only-report",
+            "--full-run",
+            "--feature-set",
+            "mentor_clean_v1",
+            "--label-mode",
+            "no_trade_band",
+            "--threshold-bps",
+            "5.0",
+        ],
+    )
+
+    with pytest.raises(ValueError, match="lightgbm.*--full-run"):
+        runner.main()
+
+
+@pytest.mark.parametrize(
+    ("route_args", "message"),
+    [
+        (
+            [
+                "--feature-set",
+                "technical_v1",
+                "--label-mode",
+                "no_trade_band",
+                "--threshold-bps",
+                "5.0",
+            ],
+            "lightgbm.*--feature-set mentor_clean_v1",
+        ),
+        (
+            [
+                "--feature-set",
+                "mentor_clean_v1",
+                "--label-mode",
+                "legacy_binary",
+            ],
+            "lightgbm.*--label-mode no_trade_band",
+        ),
+        (
+            [
+                "--feature-set",
+                "mentor_clean_v1",
+                "--label-mode",
+                "no_trade_band",
+            ],
+            "lightgbm.*--threshold-bps 5.0",
+        ),
+        (
+            [
+                "--feature-set",
+                "mentor_clean_v1",
+                "--label-mode",
+                "no_trade_band",
+                "--threshold-bps",
+                "3.0",
+            ],
+            "lightgbm.*--threshold-bps 5.0",
+        ),
+    ],
+)
+def test_lightgbm_requires_pm_route_args_before_prepare_data(
+    monkeypatch,
+    route_args,
+    message,
+):
+    monkeypatch.setattr(
+        runner,
+        "prepare_data",
+        lambda **kwargs: pytest.fail("invalid LightGBM PM route should stop early"),
+    )
+    monkeypatch.setattr(
+        "sys.argv",
+        [
+            "local_baseline_matrix.py",
+            "--model-family",
+            "lightgbm",
+            "--validation-only-report",
+            *route_args,
+        ],
+    )
+
+    with pytest.raises(ValueError, match=message):
+        runner.main()
+
+
+def test_lightgbm_validation_only_cli_dispatches_without_torch_or_logreg(
+    tmp_path,
+    monkeypatch,
+):
+    prepared = _toy_prepared_data()
+    observed = {}
+
+    def fake_prepare_data(**kwargs):
+        return prepared
+
+    def fake_lightgbm_baseline(
+        metadata,
+        candidate,
+        prepared,
+        feature_view,
+        validation_only_per_ticker=False,
+    ):
+        observed["model_family"] = metadata["model_family"]
+        observed["models"] = metadata["models"]
+        observed["feature_view"] = feature_view
+        observed["validation_only_per_ticker"] = validation_only_per_ticker
+        return [
+            {
+                **runner.base_result_fields(metadata, candidate),
+                **runner.validation_only_report_fields(),
+                "model_name": runner.LIGHTGBM_MODEL_NAME,
+                "model_family": "lightgbm",
+            }
+        ]
+
+    monkeypatch.setattr(runner, "prepare_data", fake_prepare_data)
+    monkeypatch.setattr(
+        runner,
+        "run_model_once",
+        lambda *args, **kwargs: pytest.fail("LightGBM validation should not train torch"),
+    )
+    monkeypatch.setattr(
+        runner,
+        "run_sklearn_logreg_baseline",
+        lambda *args, **kwargs: pytest.fail("LightGBM should not run sklearn_logreg"),
+    )
+    monkeypatch.setattr(
+        runner,
+        "run_lightgbm_validation_only_baseline",
+        fake_lightgbm_baseline,
+    )
+    monkeypatch.setattr(
+        "sys.argv",
+        [
+            "local_baseline_matrix.py",
+            "--model-family",
+            "lightgbm",
+            "--validation-only-report",
+            "--feature-set",
+            "mentor_clean_v1",
+            "--label-mode",
+            "no_trade_band",
+            "--threshold-bps",
+            "5.0",
+            "--tickers",
+            "AAA",
+            "--output-dir",
+            str(tmp_path / "out"),
+        ],
+    )
+
+    runner.main()
+
+    assert observed == {
+        "model_family": "lightgbm",
+        "models": [runner.LIGHTGBM_MODEL_NAME],
+        "feature_view": "last_step",
+        "validation_only_per_ticker": False,
+    }
+    metadata = json.loads(next((tmp_path / "out").rglob("metadata.json")).read_text())
+    assert metadata["model_family"] == "lightgbm"
+    assert metadata["models"] == [runner.LIGHTGBM_MODEL_NAME]
+    assert metadata["threshold_source"] == "fixed_pre_registered_5bps"
+    results = pd.read_csv(next((tmp_path / "out").rglob("results.csv")))
+    assert results.loc[0, "model_name"] == runner.LIGHTGBM_MODEL_NAME
+    assert results.loc[0, "model_family"] == "lightgbm"
+
+
+def test_lightgbm_validation_only_report_embargoes_test_metric_fields(monkeypatch):
+    monkeypatch.setitem(runner.sys.modules, "lightgbm", _FakeLightGBMModule)
+
+    rows = runner.run_lightgbm_validation_only_baseline(
+        metadata={**_sklearn_metadata(), "model_family": "lightgbm"},
+        candidate=_candidate(),
+        prepared=_toy_prepared_data(),
+        feature_view="last_step",
+        validation_only_per_ticker=True,
+    )
+
+    assert [row["ticker"] for row in rows] == ["pooled", "AAA"]
+    for row in rows:
+        assert row["model_name"] == runner.LIGHTGBM_MODEL_NAME
+        assert row["model_family"] == "lightgbm"
+        assert row["split"] == "validation"
+        assert row["report_scope"] == "validation_only"
+        assert row["test_metrics_used"] is False
+        assert np.isfinite(row["val_macro_f1"])
+        _assert_validation_only_no_test_exposure(row)
+
+
+def test_lightgbm_validation_only_report_does_not_score_test_split(monkeypatch):
+    prepared = _toy_prepared_data()
+    original_dataset_features = runner.dataset_features
+    original_compute_metrics = runner.compute_classification_metrics
+    original_compute_baselines = runner.compute_baselines
+
+    def guarded_dataset_features(dataset, feature_view):
+        if dataset is prepared.test_dataset:
+            pytest.fail("LightGBM validation-only report should not featurize test split")
+        return original_dataset_features(dataset, feature_view)
+
+    def guarded_compute_metrics(y_true, y_pred):
+        if y_true is prepared.y_test:
+            pytest.fail("LightGBM validation-only report should not compute test metrics")
+        return original_compute_metrics(y_true, y_pred)
+
+    def guarded_compute_baselines(y_train, y_eval):
+        if y_eval is prepared.y_test:
+            pytest.fail("LightGBM validation-only report should not compute test baselines")
+        return original_compute_baselines(y_train, y_eval)
+
+    monkeypatch.setitem(runner.sys.modules, "lightgbm", _FakeLightGBMModule)
+    monkeypatch.setattr(runner, "dataset_features", guarded_dataset_features)
+    monkeypatch.setattr(runner, "compute_classification_metrics", guarded_compute_metrics)
+    monkeypatch.setattr(runner, "compute_baselines", guarded_compute_baselines)
+
+    rows = runner.run_lightgbm_validation_only_baseline(
+        metadata={**_sklearn_metadata(), "model_family": "lightgbm"},
+        candidate=_candidate(),
+        prepared=prepared,
+        feature_view="last_step",
+        validation_only_per_ticker=True,
+    )
+
+    assert all(row["test_metrics_used"] is False for row in rows)
+
+
+def test_fit_lightgbm_classifier_uses_locked_default_params(monkeypatch):
+    _FakeLGBMClassifier.created = []
+    monkeypatch.setitem(runner.sys.modules, "lightgbm", _FakeLightGBMModule)
+
+    model, fit_info = runner.fit_lightgbm_classifier(
+        np.asarray([[-1.0], [1.0]]),
+        np.asarray([0, 1]),
+    )
+
+    assert model.fit_called is True
+    assert _FakeLGBMClassifier.created[0].params == runner.default_lightgbm_params()
+    assert fit_info["objective"] == "binary"
+    assert fit_info["n_estimators"] == 100
+    assert fit_info["learning_rate"] == 0.05
+    assert fit_info["num_leaves"] == 31
+    assert fit_info["random_state"] == 42
+    assert fit_info["n_jobs"] == 1
+    assert fit_info["verbosity"] == -1
+
+
+def test_load_lightgbm_module_missing_dependency_message(monkeypatch):
+    real_import = __import__
+
+    def fake_import(name, *args, **kwargs):
+        if name == "lightgbm":
+            raise ModuleNotFoundError("missing", name="lightgbm")
+        return real_import(name, *args, **kwargs)
+
+    monkeypatch.setattr("builtins.__import__", fake_import)
+
+    with pytest.raises(ImportError, match="lightgbm==4.6.0"):
+        runner.load_lightgbm_module()
+
+
+def test_load_lightgbm_module_preserves_internal_import_errors(monkeypatch):
+    real_import = __import__
+
+    def fake_import(name, *args, **kwargs):
+        if name == "lightgbm":
+            raise ModuleNotFoundError("missing dependency", name="lightgbm_dependency")
+        return real_import(name, *args, **kwargs)
+
+    monkeypatch.setattr("builtins.__import__", fake_import)
+
+    with pytest.raises(ModuleNotFoundError, match="missing dependency"):
+        runner.load_lightgbm_module()
 
 
 def test_sklearn_cli_passes_custom_logreg_and_window_controls(
@@ -1324,6 +1675,7 @@ def test_manifest_rows_include_pooled_validation_observability():
         "data_source": "synthetic",
         "feature_set_id": "ohlcv_only_v1",
         "label_mode": "legacy_binary",
+        **runner.protocol_metadata_fields("ohlcv_only_v1", "legacy_binary", 0.0, None),
         "label_semantics": "canonical_phase1_full_binary",
         "label_formula": "label = 1 if future_avg_r > 0 else 0",
         "class_0_name": "non_up",
@@ -1588,6 +1940,28 @@ class _ToyWindowDataset:
         return self._windows[index], self._labels[index]
 
 
+class _FakeLGBMClassifier:
+    created = []
+
+    def __init__(self, **params):
+        self.params = params
+        self.fit_called = False
+        _FakeLGBMClassifier.created.append(self)
+
+    def fit(self, x_train, y_train):
+        self.fit_called = True
+        self.x_train_shape = x_train.shape
+        self.y_train_shape = y_train.shape
+        return self
+
+    def predict(self, x_eval):
+        return (x_eval[:, 0] >= 0.0).astype(int)
+
+
+class _FakeLightGBMModule:
+    LGBMClassifier = _FakeLGBMClassifier
+
+
 def _toy_window_dataset(windows, labels):
     return _ToyWindowDataset(windows, labels)
 
@@ -1666,6 +2040,7 @@ def _sklearn_metadata():
         "feature_set_id": "technical_v1",
         "feature_columns": list(runner.TECHNICAL_FEATURES),
         "label_mode": "legacy_binary",
+        **runner.protocol_metadata_fields("technical_v1", "legacy_binary", 0.0, None),
         "label_semantics": "canonical_phase1_full_binary",
         "label_formula": "label = 1 if future_avg_r > 0 else 0",
         "class_0_name": "non_up",

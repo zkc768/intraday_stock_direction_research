@@ -92,6 +92,7 @@ FEATURE_SETS = {
 }
 SKLEARN_LOGREG_C_GRID = (0.01, 0.1, 1.0, 10.0)
 SKLEARN_LOGREG_CLASS_WEIGHTS = (None, "balanced")
+LIGHTGBM_MODEL_NAME = "lightgbm_lgbm_classifier"
 
 
 @dataclass(frozen=True)
@@ -154,7 +155,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--models", nargs="+", default=["lstm", "tcn", "dlinear"])
     parser.add_argument(
         "--model-family",
-        choices=["torch", "sklearn_logreg"],
+        choices=["torch", "sklearn_logreg", "lightgbm"],
         default="torch",
     )
     parser.add_argument("--sklearn-baseline", action="store_true")
@@ -196,11 +197,13 @@ def main() -> None:
     args = parse_args()
     run_mode = resolve_run_mode(args)
     model_family = resolve_model_family(args)
-    if args.validation_only_report and model_family != "sklearn_logreg":
+    if args.validation_only_report and model_family not in {"sklearn_logreg", "lightgbm"}:
         raise ValueError(
             "--validation-only-report requires --sklearn-baseline "
-            "or --model-family sklearn_logreg"
+            "or --model-family sklearn_logreg/lightgbm"
         )
+    if model_family == "lightgbm" and not args.validation_only_report:
+        raise ValueError("--model-family lightgbm requires --validation-only-report")
     if args.validation_only_per_ticker and not args.validation_only_report:
         raise ValueError(
             "--validation-only-per-ticker requires --validation-only-report"
@@ -223,6 +226,14 @@ def main() -> None:
     seeds = resolve_seeds(args, run_mode)
     max_epochs = resolve_max_epochs(args, run_mode)
     feature_set_id = resolve_feature_set(args, run_mode)
+    if model_family == "lightgbm":
+        validate_lightgbm_pm_route(
+            args=args,
+            run_mode=run_mode,
+            feature_set_id=feature_set_id,
+            label_mode=label_mode,
+            threshold_bps=threshold_bps,
+        )
     feature_cols = list(FEATURE_SETS[feature_set_id])
     max_rows_per_ticker = None if calendar_split is not None else resolve_max_rows(args, run_mode)
     output_dir = args.output_dir.resolve()
@@ -248,6 +259,12 @@ def main() -> None:
         "window_size": candidate.window_size,
         "label_horizon_k": candidate.label_horizon_k,
         "threshold_bps": candidate.threshold_bps,
+        **protocol_metadata_fields(
+            feature_set_id,
+            candidate.label_mode,
+            candidate.threshold_bps,
+            args.threshold_bps,
+        ),
         "timestamp_col": data_config.timestamp_col,
         "split_mode": args.split_mode,
         "split_date_ranges_available": True,
@@ -255,7 +272,7 @@ def main() -> None:
         "split_date_range_source": "prepared_split_frames_after_feature_label_filtering",
         "price_col": data_config.price_col,
         "tickers": tickers,
-        "models": ["sklearn_logreg_l2"] if model_family == "sklearn_logreg" else args.models,
+        "models": model_names_for_family(model_family, args.models),
         "model_family": model_family,
         "feature_view": args.feature_view,
         "logreg_c_grid": list(logreg_c_grid),
@@ -319,6 +336,17 @@ def main() -> None:
             )
         )
         write_outputs(output_dir, "results", result_rows, metadata)
+    elif model_family == "lightgbm":
+        result_rows.extend(
+            run_lightgbm_validation_only_baseline(
+                metadata=metadata,
+                candidate=candidate,
+                prepared=prepared,
+                feature_view=args.feature_view,
+                validation_only_per_ticker=args.validation_only_per_ticker,
+            )
+        )
+        write_outputs(output_dir, "results", result_rows, metadata)
     else:
         for seed in seeds:
             for model_name in args.models:
@@ -361,6 +389,14 @@ def resolve_model_family(args: argparse.Namespace) -> str:
     if args.sklearn_baseline:
         return "sklearn_logreg"
     return args.model_family
+
+
+def model_names_for_family(model_family: str, torch_models: list[str]) -> list[str]:
+    if model_family == "sklearn_logreg":
+        return ["sklearn_logreg_l2"]
+    if model_family == "lightgbm":
+        return [LIGHTGBM_MODEL_NAME]
+    return torch_models
 
 
 def parse_logreg_c_grid(values: list[str] | None) -> tuple[float, ...]:
@@ -568,9 +604,59 @@ def resolve_feature_set(args: argparse.Namespace, run_mode: str) -> str:
     return "mentor_clean_v1"
 
 
+def validate_lightgbm_pm_route(
+    args: argparse.Namespace,
+    run_mode: str,
+    feature_set_id: str,
+    label_mode: str,
+    threshold_bps: float,
+) -> None:
+    if run_mode == "full":
+        raise ValueError("--model-family lightgbm does not support --full-run")
+    if feature_set_id != "mentor_clean_v1":
+        raise ValueError(
+            "--model-family lightgbm requires --feature-set mentor_clean_v1"
+        )
+    if label_mode != "no_trade_band":
+        raise ValueError(
+            "--model-family lightgbm requires --label-mode no_trade_band"
+        )
+    if args.threshold_bps is None or threshold_bps != 5.0:
+        raise ValueError(
+            "--model-family lightgbm requires explicit --threshold-bps 5.0"
+        )
+
+
 def build_run_id(run_mode: str, label_mode: str) -> str:
     timestamp = time.strftime("%Y%m%d_%H%M%S")
     return f"phase1b_local_{label_mode}_{run_mode}_{timestamp}"
+
+
+def protocol_metadata_fields(
+    feature_set_id: str,
+    label_mode: str,
+    threshold_bps: float,
+    cli_threshold_bps: float | None,
+) -> dict[str, str]:
+    decision_time_policy = "not_locked_for_current_protocol"
+    if feature_set_id == "mentor_clean_v1":
+        decision_time_policy = "post_bar_close_completed_bar"
+
+    threshold_source = "not_applicable_binary_boundary"
+    if label_mode == "no_trade_band":
+        if threshold_bps == 5.0 and cli_threshold_bps is not None:
+            threshold_source = "fixed_pre_registered_5bps"
+        elif threshold_bps == 5.0:
+            threshold_source = "default_fixed_5bps"
+        else:
+            threshold_source = "fixed_cli_bps"
+
+    return {
+        "decision_time_policy": decision_time_policy,
+        "scaler_id": "standard_pooled_train_only_v1",
+        "scaler_fit_scope": "pooled_train_after_per_ticker_chronological_split",
+        "threshold_source": threshold_source,
+    }
 
 
 def label_metadata_fields(label_mode: str, threshold_bps: float) -> dict[str, Any]:
@@ -1707,6 +1793,199 @@ def select_sklearn_logreg_candidate(candidates: list[dict[str, Any]]) -> dict[st
     )
 
 
+def run_lightgbm_validation_only_baseline(
+    metadata: dict[str, Any],
+    candidate: CandidateSpec,
+    prepared: PreparedData,
+    feature_view: str,
+    validation_only_per_ticker: bool = False,
+) -> list[dict[str, Any]]:
+    x_train = dataset_features(prepared.train_dataset, feature_view)
+    x_val = dataset_features(prepared.val_dataset, feature_view)
+    model, fit_info = fit_lightgbm_classifier(x_train, prepared.y_train)
+    val_pred = model.predict(x_val)
+    val_metrics = compute_classification_metrics(prepared.y_val, val_pred)
+    val_baseline_metrics = compute_baselines(prepared.y_train, prepared.y_val)
+    val_delta = (
+        val_metrics["macro_f1"]
+        - val_baseline_metrics["dummy_stratified_macro_f1_mean"]
+    )
+    rows = [
+        lightgbm_validation_only_result_row(
+            metadata=metadata,
+            candidate=candidate,
+            prepared=prepared,
+            feature_view=feature_view,
+            fit_info=fit_info,
+            val_metrics=val_metrics,
+            val_baseline_metrics=val_baseline_metrics,
+            val_delta=val_delta,
+        )
+    ]
+    if validation_only_per_ticker:
+        rows.extend(
+            lightgbm_validation_only_ticker_rows(
+                metadata=metadata,
+                candidate=candidate,
+                prepared=prepared,
+                feature_view=feature_view,
+                model=model,
+                fit_info=fit_info,
+            )
+        )
+    return rows
+
+
+def lightgbm_validation_only_result_row(
+    metadata: dict[str, Any],
+    candidate: CandidateSpec,
+    prepared: PreparedData,
+    feature_view: str,
+    fit_info: dict[str, Any],
+    val_metrics: dict[str, Any],
+    val_baseline_metrics: dict[str, Any],
+    val_delta: float,
+) -> dict[str, Any]:
+    return {
+        **base_result_fields(metadata, candidate),
+        **validation_only_report_fields(),
+        "model_name": LIGHTGBM_MODEL_NAME,
+        "model_family": "lightgbm",
+        "ticker": "pooled",
+        "seed": None,
+        "split": "validation",
+        "feature_view": feature_view,
+        **lightgbm_result_fields(fit_info),
+        **secondary_baseline_scope_fields("pooled"),
+        "n_train_windows": int(len(prepared.train_dataset)),
+        "n_val_windows": int(len(prepared.val_dataset)),
+        "train_up_pct": safe_mean(prepared.y_train.astype(float)),
+        "val_up_pct": safe_mean(prepared.y_val.astype(float)),
+        "val_macro_f1": float(val_metrics["macro_f1"]),
+        "val_balanced_accuracy": float(val_metrics["balanced_accuracy"]),
+        "val_delta_macro_f1_vs_dummy": float(val_delta),
+        **scope_diagnostics_fields("pooled", prepared, metadata),
+        "best_epoch": None,
+        "best_val_macro_f1": float(val_metrics["macro_f1"]),
+        "val_dummy_stratified_macro_f1_mean": val_baseline_metrics[
+            "dummy_stratified_macro_f1_mean"
+        ],
+        "training_time_seconds": float(fit_info["fit_time_seconds"]),
+        "suspicious_status": "ok",
+    }
+
+
+def lightgbm_validation_only_ticker_rows(
+    metadata: dict[str, Any],
+    candidate: CandidateSpec,
+    prepared: PreparedData,
+    feature_view: str,
+    model: Any,
+    fit_info: dict[str, Any],
+) -> list[dict[str, Any]]:
+    rows = []
+    for ticker in sorted(prepared.val_datasets_by_ticker):
+        val_dataset = prepared.val_datasets_by_ticker[ticker]
+        if len(val_dataset) == 0:
+            raise ValueError(f"{ticker} validation dataset is empty")
+        y_val = prepared.y_val_by_ticker[ticker]
+        x_val = dataset_features(val_dataset, feature_view)
+        val_pred = model.predict(x_val)
+        val_metrics = compute_classification_metrics(y_val, val_pred)
+        val_baseline_metrics = compute_baselines(
+            prepared.y_train_by_ticker[ticker],
+            y_val,
+        )
+        val_delta = (
+            val_metrics["macro_f1"]
+            - val_baseline_metrics["dummy_stratified_macro_f1_mean"]
+        )
+        rows.append(
+            {
+                **base_result_fields(metadata, candidate),
+                **validation_only_report_fields(),
+                "model_name": LIGHTGBM_MODEL_NAME,
+                "model_family": "lightgbm",
+                "ticker": ticker,
+                "seed": None,
+                "split": "validation",
+                "feature_view": feature_view,
+                **lightgbm_result_fields(fit_info),
+                **secondary_baseline_scope_fields(ticker),
+                "n_train_windows": int(len(prepared.train_dataset)),
+                "n_val_windows": int(len(val_dataset)),
+                "train_up_pct": safe_mean(prepared.y_train.astype(float)),
+                "val_up_pct": safe_mean(y_val.astype(float)),
+                "val_macro_f1": float(val_metrics["macro_f1"]),
+                "val_balanced_accuracy": float(val_metrics["balanced_accuracy"]),
+                "val_delta_macro_f1_vs_dummy": float(val_delta),
+                **scope_diagnostics_fields(ticker, prepared, metadata),
+                "best_epoch": None,
+                "best_val_macro_f1": float(val_metrics["macro_f1"]),
+                "val_dummy_stratified_macro_f1_mean": val_baseline_metrics[
+                    "dummy_stratified_macro_f1_mean"
+                ],
+                "training_time_seconds": float(fit_info["fit_time_seconds"]),
+                "suspicious_status": "ok",
+            }
+        )
+    return rows
+
+
+def lightgbm_result_fields(fit_info: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "objective": fit_info["objective"],
+        "n_estimators": int(fit_info["n_estimators"]),
+        "learning_rate": float(fit_info["learning_rate"]),
+        "num_leaves": int(fit_info["num_leaves"]),
+        "random_state": int(fit_info["random_state"]),
+        "n_jobs": int(fit_info["n_jobs"]),
+        "verbosity": int(fit_info["verbosity"]),
+        "warnings": json.dumps(fit_info["warnings"]),
+    }
+
+
+def fit_lightgbm_classifier(
+    x_train: np.ndarray,
+    y_train: np.ndarray,
+) -> tuple[Any, dict[str, Any]]:
+    lightgbm = load_lightgbm_module()
+    params = default_lightgbm_params()
+    model = lightgbm.LGBMClassifier(**params)
+    started_at = time.perf_counter()
+    model.fit(x_train, y_train)
+    fit_time_seconds = time.perf_counter() - started_at
+    return model, {
+        **params,
+        "warnings": [],
+        "fit_time_seconds": fit_time_seconds,
+    }
+
+
+def default_lightgbm_params() -> dict[str, Any]:
+    return {
+        "objective": "binary",
+        "n_estimators": 100,
+        "learning_rate": 0.05,
+        "num_leaves": 31,
+        "random_state": 42,
+        "n_jobs": 1,
+        "verbosity": -1,
+    }
+
+
+def load_lightgbm_module() -> Any:
+    try:
+        return __import__("lightgbm")
+    except ModuleNotFoundError as exc:
+        if exc.name != "lightgbm":
+            raise
+        raise ImportError(
+            "LightGBM support requires the pinned dependency lightgbm==4.6.0. "
+            "Install the project requirements before running --model-family lightgbm."
+        ) from exc
+
+
 def run_model_once(
     model_name: str,
     seed: int,
@@ -1950,6 +2229,10 @@ def base_result_fields(metadata: dict[str, Any], candidate: CandidateSpec) -> di
         "window_size": candidate.window_size,
         "label_horizon_k": candidate.label_horizon_k,
         "threshold_bps": candidate.threshold_bps,
+        "threshold_source": metadata["threshold_source"],
+        "decision_time_policy": metadata["decision_time_policy"],
+        "scaler_id": metadata["scaler_id"],
+        "scaler_fit_scope": metadata["scaler_fit_scope"],
         "timestamp_col": metadata["timestamp_col"],
         "price_col": metadata["price_col"],
         "shuffle_train_labels": metadata["shuffle_train_labels"],

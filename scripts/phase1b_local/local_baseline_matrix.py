@@ -38,6 +38,7 @@ from ml_utils.metrics import compute_classification_metrics
 from ml_utils.metrics import dummy_baseline_metrics
 from ml_utils.models.dlinear_classifier import DLinearClassifier
 from ml_utils.models.lstm_classifier import LSTMClassifier
+from ml_utils.models.ms_dlinear_tcn_classifier import MultiScaleDLinearTCNClassifier
 from ml_utils.models.tcn_classifier import TCNClassifier
 from ml_utils.seed import seed_everything
 from ml_utils.trainer import Trainer
@@ -2074,6 +2075,14 @@ def build_model(model_name: str, seq_len: int, input_size: int) -> torch.nn.Modu
         return TCNClassifier(input_size=input_size, num_channels=[16, 16], kernel_size=3)
     if model_name == "dlinear":
         return DLinearClassifier(seq_len=seq_len, input_size=input_size, moving_avg_kernel=5)
+    if model_name == "ms_dlinear_tcn":
+        return MultiScaleDLinearTCNClassifier(
+            seq_len=seq_len,
+            input_size=input_size,
+            moving_avg_kernels=(3, 5, 9),
+            tcn_channels=(16, 16),
+            tcn_kernel_size=3,
+        )
     raise ValueError(f"unknown model name: {model_name}")
 
 

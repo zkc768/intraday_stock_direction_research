@@ -1507,6 +1507,93 @@ def test_sklearn_model_family_switch_selects_logreg_without_alias():
     assert runner.resolve_model_family(args) == "sklearn_logreg"
 
 
+def test_build_model_constructs_ms_dlinear_tcn_with_seq_len_and_input_size():
+    model = runner.build_model("ms_dlinear_tcn", seq_len=12, input_size=10)
+    x = torch.randn(2, 12, 10)
+
+    logits = model(x)
+
+    assert model.__class__.__name__ == "MultiScaleDLinearTCNClassifier"
+    assert model.seq_len == 12
+    assert model.input_size == 10
+    assert logits.shape == (2, 2)
+
+
+def test_build_model_rejects_unknown_model_name_still():
+    with pytest.raises(ValueError, match="unknown model name"):
+        runner.build_model("missing_model", seq_len=12, input_size=10)
+
+
+def test_torch_cli_can_select_ms_dlinear_tcn_without_real_training(
+    tmp_path,
+    monkeypatch,
+):
+    observed = {}
+
+    def fake_prepare_data(**kwargs):
+        observed["candidate"] = kwargs["candidate"]
+        return _toy_prepared_data()
+
+    def fake_run_model_once(
+        model_name,
+        seed,
+        max_epochs,
+        batch_size,
+        learning_rate,
+        weight_decay,
+        early_stop_patience,
+        output_dir,
+        metadata,
+        candidate,
+        prepared,
+        feature_cols,
+    ):
+        observed["model_name"] = model_name
+        observed["metadata"] = metadata
+        observed["feature_cols"] = feature_cols
+        return [
+            {
+                **runner.base_result_fields(metadata, candidate),
+                "model_name": model_name,
+                "seed": seed,
+                "report_scope": "dispatch_only",
+            }
+        ]
+
+    monkeypatch.setattr(runner, "prepare_data", fake_prepare_data)
+    monkeypatch.setattr(runner, "run_model_once", fake_run_model_once)
+    monkeypatch.setattr(
+        "sys.argv",
+        [
+            "local_baseline_matrix.py",
+            "--models",
+            "ms_dlinear_tcn",
+            "--feature-set",
+            "mentor_clean_v1",
+            "--label-mode",
+            "no_trade_band",
+            "--threshold-bps",
+            "5.0",
+            "--tickers",
+            "AAA",
+            "--output-dir",
+            str(tmp_path / "out"),
+        ],
+    )
+
+    runner.main()
+
+    assert observed["model_name"] == "ms_dlinear_tcn"
+    assert observed["candidate"].label_mode == "no_trade_band"
+    assert observed["candidate"].threshold_bps == 5.0
+    assert observed["metadata"]["models"] == ["ms_dlinear_tcn"]
+    assert observed["metadata"]["decision_time_policy"] == "post_bar_close_completed_bar"
+    assert observed["metadata"]["scaler_id"] == "standard_pooled_train_only_v1"
+    assert observed["metadata"]["threshold_source"] == "fixed_pre_registered_5bps"
+    results = pd.read_csv(next((tmp_path / "out").rglob("results.csv")))
+    assert results.loc[0, "model_name"] == "ms_dlinear_tcn"
+
+
 def test_stationary_v1_core_manifest_only_writes_feature_metadata_without_training(
     tmp_path,
     monkeypatch,

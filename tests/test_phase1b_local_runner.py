@@ -1059,6 +1059,9 @@ def test_sklearn_validation_only_cli_marks_metadata_and_result_scope(
     }
     metadata_path = next((tmp_path / "out").rglob("metadata.json"))
     metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
+    assert metadata["feature_set_id"] == "mentor_clean_v1"
+    assert metadata["label_mode"] == "no_trade_band"
+    assert metadata["threshold_bps"] == 5.0
     assert metadata["report_scope"] == "validation_only"
     assert metadata["selection_scope"] == "validation_only"
     assert metadata["test_metrics_embargoed"] is True
@@ -1073,6 +1076,60 @@ def test_sklearn_validation_only_cli_marks_metadata_and_result_scope(
     assert results.loc[0, "decision_time_policy"] == "post_bar_close_completed_bar"
     assert results.loc[0, "scaler_id"] == "standard_pooled_train_only_v1"
     assert results.loc[0, "threshold_source"] == "fixed_pre_registered_5bps"
+
+
+def test_validation_only_manifest_omits_holdout_and_test_exposure(
+    tmp_path,
+    monkeypatch,
+):
+    prepared = _toy_prepared_data()
+
+    def fake_prepare_data(**kwargs):
+        return prepared
+
+    def fake_sklearn_baseline(
+        metadata,
+        candidate,
+        prepared,
+        feature_view,
+        validation_only_report=False,
+        validation_only_per_ticker=False,
+        c_grid=runner.SKLEARN_LOGREG_C_GRID,
+        class_weights=runner.SKLEARN_LOGREG_CLASS_WEIGHTS,
+    ):
+        return [
+            {
+                **runner.base_result_fields(metadata, candidate),
+                **runner.validation_only_report_fields(),
+                "model_name": "sklearn_logreg_l2",
+            }
+        ]
+
+    monkeypatch.setattr(runner, "prepare_data", fake_prepare_data)
+    monkeypatch.setattr(runner, "run_sklearn_logreg_baseline", fake_sklearn_baseline)
+    monkeypatch.setattr(
+        "sys.argv",
+        [
+            "local_baseline_matrix.py",
+            "--sklearn-baseline",
+            "--validation-only-report",
+            "--feature-set",
+            "mentor_clean_v1",
+            "--label-mode",
+            "no_trade_band",
+            "--threshold-bps",
+            "5.0",
+            "--tickers",
+            "AAA",
+            "--output-dir",
+            str(tmp_path / "out"),
+        ],
+    )
+
+    runner.main()
+
+    manifest = pd.read_csv(next((tmp_path / "out").rglob("manifest.csv")))
+    _assert_validation_only_manifest_no_holdout_test_exposure(manifest.columns)
 
 
 def test_validation_only_report_rejects_torch_model_family(monkeypatch):
@@ -1093,6 +1150,21 @@ def test_validation_only_report_rejects_torch_model_family(monkeypatch):
 
     with pytest.raises(ValueError, match="validation-only-report"):
         runner.main()
+
+
+def test_write_outputs_rejects_existing_run_directory(tmp_path):
+    output_dir = tmp_path / "out"
+    run_dir = output_dir / "run_a"
+    run_dir.mkdir(parents=True)
+    (run_dir / "sentinel.txt").write_text("existing artifact", encoding="utf-8")
+
+    with pytest.raises(FileExistsError, match="run_a"):
+        runner.write_outputs(
+            output_dir,
+            "manifest",
+            [{"ticker": "AAA", "candidate_id": "A"}],
+            {"run_id": "run_a"},
+        )
 
 
 def test_validation_only_per_ticker_requires_validation_only_report(monkeypatch):
@@ -1753,6 +1825,8 @@ def test_calendar_validation_only_output_embargoes_test_fields(tmp_path, monkeyp
     assert set(results["selection_scope"]) == {"validation_only"}
     for row in results.to_dict(orient="records"):
         _assert_validation_only_no_test_exposure(row)
+    manifest = pd.read_csv(next(output_dir.rglob("manifest.csv")))
+    _assert_validation_only_manifest_no_holdout_test_exposure(manifest.columns)
 
 
 def test_manifest_rows_include_pooled_validation_observability():
@@ -1966,6 +2040,19 @@ def _assert_validation_only_no_test_exposure(row):
         key for key in row if key.startswith("test_") and key not in allowed_test_prefix_fields
     ]
     assert leaked_test_fields == []
+
+
+def _assert_validation_only_manifest_no_holdout_test_exposure(columns):
+    forbidden = {
+        "test_rows",
+        "test_retained_labels",
+        "test_nan_labels",
+        "n_test_windows",
+        "test_up_pct",
+        "holdout_start_ts",
+        "holdout_end_ts",
+    }
+    assert sorted(forbidden.intersection(columns)) == []
 
 
 def _label_diag(n_total, n_up, n_down):

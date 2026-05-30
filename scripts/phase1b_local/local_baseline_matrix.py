@@ -2314,8 +2314,9 @@ def split_date_range_fields(
     prepared: PreparedData,
     scope_name: str,
     timestamp_col: str,
+    include_holdout: bool = True,
 ) -> dict[str, Any]:
-    return {
+    fields = {
         **split_frame_date_range_fields(
             prepared.train_df,
             scope_name,
@@ -2328,13 +2329,17 @@ def split_date_range_fields(
             timestamp_col,
             "val",
         ),
-        **split_frame_date_range_fields(
-            prepared.test_df,
-            scope_name,
-            timestamp_col,
-            "holdout",
-        ),
     }
+    if include_holdout:
+        fields.update(
+            split_frame_date_range_fields(
+                prepared.test_df,
+                scope_name,
+                timestamp_col,
+                "holdout",
+            )
+        )
+    return fields
 
 
 def split_frame_date_range_fields(
@@ -2468,46 +2473,56 @@ def build_manifest_rows(
     prepared: PreparedData,
 ) -> list[dict[str, Any]]:
     rows = []
+    validation_only_report = metadata.get("report_scope") == "validation_only"
     for ticker in metadata["tickers"]:
         label_diag = prepared.diagnostics_by_ticker[f"{ticker}_label"]
         train_diag = prepared.diagnostics_by_ticker[f"{ticker}_train"]
         val_diag = prepared.diagnostics_by_ticker[f"{ticker}_val"]
-        test_diag = prepared.diagnostics_by_ticker[f"{ticker}_test"]
         y_train = prepared.y_train_by_ticker[ticker]
         y_val = prepared.y_val_by_ticker[ticker]
-        y_test = prepared.y_test_by_ticker[ticker]
         retained = int(label_diag["n_up"] + label_diag["n_down"])
-        rows.append(
-            {
-                **base_result_fields(metadata, candidate),
-                "ticker": ticker,
-                **secondary_baseline_scope_fields(ticker),
-                **feature_drop_fields(prepared, ticker, metadata["tickers"]),
-                **split_date_range_fields(prepared, ticker, metadata["timestamp_col"]),
-                "label_n_total": int(label_diag["n_total"]),
-                "label_n_retained": retained,
-                "label_n_neutral": int(label_diag["n_neutral"]),
-                "label_n_cross_day": int(label_diag["n_cross_day"]),
-                "label_n_tail": int(label_diag["n_tail"]),
-                "label_n_zero_return": int(label_diag.get("n_zero_return", 0)),
-                "retained_pct": retained / int(label_diag["n_total"]),
-                "train_rows": train_diag["n_rows"],
-                "val_rows": val_diag["n_rows"],
-                "test_rows": test_diag["n_rows"],
-                "train_retained_labels": train_diag["n_retained_labels"],
-                "val_retained_labels": val_diag["n_retained_labels"],
-                "test_retained_labels": test_diag["n_retained_labels"],
-                "train_nan_labels": train_diag["n_nan_labels"],
-                "val_nan_labels": val_diag["n_nan_labels"],
-                "test_nan_labels": test_diag["n_nan_labels"],
-                "n_train_windows": int(y_train.shape[0]),
-                "n_val_windows": int(y_val.shape[0]),
-                "n_test_windows": int(y_test.shape[0]),
-                "train_up_pct": safe_mean(y_train.astype(float)),
-                "val_up_pct": safe_mean(y_val.astype(float)),
-                "test_up_pct": safe_mean(y_test.astype(float)),
-            }
-        )
+        row = {
+            **base_result_fields(metadata, candidate),
+            "ticker": ticker,
+            **secondary_baseline_scope_fields(ticker),
+            **feature_drop_fields(prepared, ticker, metadata["tickers"]),
+            **split_date_range_fields(
+                prepared,
+                ticker,
+                metadata["timestamp_col"],
+                include_holdout=not validation_only_report,
+            ),
+            "label_n_total": int(label_diag["n_total"]),
+            "label_n_retained": retained,
+            "label_n_neutral": int(label_diag["n_neutral"]),
+            "label_n_cross_day": int(label_diag["n_cross_day"]),
+            "label_n_tail": int(label_diag["n_tail"]),
+            "label_n_zero_return": int(label_diag.get("n_zero_return", 0)),
+            "retained_pct": retained / int(label_diag["n_total"]),
+            "train_rows": train_diag["n_rows"],
+            "val_rows": val_diag["n_rows"],
+            "train_retained_labels": train_diag["n_retained_labels"],
+            "val_retained_labels": val_diag["n_retained_labels"],
+            "train_nan_labels": train_diag["n_nan_labels"],
+            "val_nan_labels": val_diag["n_nan_labels"],
+            "n_train_windows": int(y_train.shape[0]),
+            "n_val_windows": int(y_val.shape[0]),
+            "train_up_pct": safe_mean(y_train.astype(float)),
+            "val_up_pct": safe_mean(y_val.astype(float)),
+        }
+        if not validation_only_report:
+            test_diag = prepared.diagnostics_by_ticker[f"{ticker}_test"]
+            y_test = prepared.y_test_by_ticker[ticker]
+            row.update(
+                {
+                    "test_rows": test_diag["n_rows"],
+                    "test_retained_labels": test_diag["n_retained_labels"],
+                    "test_nan_labels": test_diag["n_nan_labels"],
+                    "n_test_windows": int(y_test.shape[0]),
+                    "test_up_pct": safe_mean(y_test.astype(float)),
+                }
+            )
+        rows.append(row)
     pooled_label_n_total = sum(
         int(prepared.diagnostics_by_ticker[f"{ticker}_label"]["n_total"])
         for ticker in metadata["tickers"]
@@ -2519,88 +2534,101 @@ def build_manifest_rows(
         )
         for ticker in metadata["tickers"]
     )
-    rows.append(
-        {
-            **base_result_fields(metadata, candidate),
-            "ticker": "pooled",
-            **secondary_baseline_scope_fields("pooled"),
-            **feature_drop_fields(prepared, "pooled", metadata["tickers"]),
-            **split_date_range_fields(prepared, "pooled", metadata["timestamp_col"]),
-            "label_n_total": pooled_label_n_total,
-            "label_n_retained": pooled_label_n_retained,
-            "label_n_neutral": sum(
-                int(prepared.diagnostics_by_ticker[f"{ticker}_label"]["n_neutral"])
-                for ticker in metadata["tickers"]
-            ),
-            "label_n_cross_day": sum(
-                int(prepared.diagnostics_by_ticker[f"{ticker}_label"]["n_cross_day"])
-                for ticker in metadata["tickers"]
-            ),
-            "label_n_tail": sum(
-                int(prepared.diagnostics_by_ticker[f"{ticker}_label"]["n_tail"])
-                for ticker in metadata["tickers"]
-            ),
-            "label_n_zero_return": sum(
-                int(prepared.diagnostics_by_ticker[f"{ticker}_label"].get("n_zero_return", 0))
-                for ticker in metadata["tickers"]
-            ),
-            "retained_pct": pooled_label_n_retained / pooled_label_n_total,
-            "train_rows": sum(
-                int(prepared.diagnostics_by_ticker[f"{ticker}_train"]["n_rows"])
-                for ticker in metadata["tickers"]
-            ),
-            "val_rows": sum(
-                int(prepared.diagnostics_by_ticker[f"{ticker}_val"]["n_rows"])
-                for ticker in metadata["tickers"]
-            ),
-            "test_rows": sum(
-                int(prepared.diagnostics_by_ticker[f"{ticker}_test"]["n_rows"])
-                for ticker in metadata["tickers"]
-            ),
-            "train_retained_labels": sum(
-                int(
-                    prepared.diagnostics_by_ticker[f"{ticker}_train"][
-                        "n_retained_labels"
-                    ]
-                )
-                for ticker in metadata["tickers"]
-            ),
-            "val_retained_labels": sum(
-                int(
-                    prepared.diagnostics_by_ticker[f"{ticker}_val"][
-                        "n_retained_labels"
-                    ]
-                )
-                for ticker in metadata["tickers"]
-            ),
-            "test_retained_labels": sum(
-                int(
-                    prepared.diagnostics_by_ticker[f"{ticker}_test"][
-                        "n_retained_labels"
-                    ]
-                )
-                for ticker in metadata["tickers"]
-            ),
-            "train_nan_labels": sum(
-                int(prepared.diagnostics_by_ticker[f"{ticker}_train"]["n_nan_labels"])
-                for ticker in metadata["tickers"]
-            ),
-            "val_nan_labels": sum(
-                int(prepared.diagnostics_by_ticker[f"{ticker}_val"]["n_nan_labels"])
-                for ticker in metadata["tickers"]
-            ),
-            "test_nan_labels": sum(
-                int(prepared.diagnostics_by_ticker[f"{ticker}_test"]["n_nan_labels"])
-                for ticker in metadata["tickers"]
-            ),
-            "n_train_windows": int(prepared.y_train.shape[0]),
-            "n_val_windows": int(prepared.y_val.shape[0]),
-            "n_test_windows": int(prepared.y_test.shape[0]),
-            "train_up_pct": safe_mean(prepared.y_train.astype(float)),
-            "val_up_pct": safe_mean(prepared.y_val.astype(float)),
-            "test_up_pct": safe_mean(prepared.y_test.astype(float)),
-        }
-    )
+    pooled_row = {
+        **base_result_fields(metadata, candidate),
+        "ticker": "pooled",
+        **secondary_baseline_scope_fields("pooled"),
+        **feature_drop_fields(prepared, "pooled", metadata["tickers"]),
+        **split_date_range_fields(
+            prepared,
+            "pooled",
+            metadata["timestamp_col"],
+            include_holdout=not validation_only_report,
+        ),
+        "label_n_total": pooled_label_n_total,
+        "label_n_retained": pooled_label_n_retained,
+        "label_n_neutral": sum(
+            int(prepared.diagnostics_by_ticker[f"{ticker}_label"]["n_neutral"])
+            for ticker in metadata["tickers"]
+        ),
+        "label_n_cross_day": sum(
+            int(prepared.diagnostics_by_ticker[f"{ticker}_label"]["n_cross_day"])
+            for ticker in metadata["tickers"]
+        ),
+        "label_n_tail": sum(
+            int(prepared.diagnostics_by_ticker[f"{ticker}_label"]["n_tail"])
+            for ticker in metadata["tickers"]
+        ),
+        "label_n_zero_return": sum(
+            int(prepared.diagnostics_by_ticker[f"{ticker}_label"].get("n_zero_return", 0))
+            for ticker in metadata["tickers"]
+        ),
+        "retained_pct": pooled_label_n_retained / pooled_label_n_total,
+        "train_rows": sum(
+            int(prepared.diagnostics_by_ticker[f"{ticker}_train"]["n_rows"])
+            for ticker in metadata["tickers"]
+        ),
+        "val_rows": sum(
+            int(prepared.diagnostics_by_ticker[f"{ticker}_val"]["n_rows"])
+            for ticker in metadata["tickers"]
+        ),
+        "train_retained_labels": sum(
+            int(
+                prepared.diagnostics_by_ticker[f"{ticker}_train"][
+                    "n_retained_labels"
+                ]
+            )
+            for ticker in metadata["tickers"]
+        ),
+        "val_retained_labels": sum(
+            int(
+                prepared.diagnostics_by_ticker[f"{ticker}_val"][
+                    "n_retained_labels"
+                ]
+            )
+            for ticker in metadata["tickers"]
+        ),
+        "train_nan_labels": sum(
+            int(prepared.diagnostics_by_ticker[f"{ticker}_train"]["n_nan_labels"])
+            for ticker in metadata["tickers"]
+        ),
+        "val_nan_labels": sum(
+            int(prepared.diagnostics_by_ticker[f"{ticker}_val"]["n_nan_labels"])
+            for ticker in metadata["tickers"]
+        ),
+        "n_train_windows": int(prepared.y_train.shape[0]),
+        "n_val_windows": int(prepared.y_val.shape[0]),
+        "train_up_pct": safe_mean(prepared.y_train.astype(float)),
+        "val_up_pct": safe_mean(prepared.y_val.astype(float)),
+    }
+    if not validation_only_report:
+        pooled_row.update(
+            {
+                "test_rows": sum(
+                    int(prepared.diagnostics_by_ticker[f"{ticker}_test"]["n_rows"])
+                    for ticker in metadata["tickers"]
+                ),
+                "test_retained_labels": sum(
+                    int(
+                        prepared.diagnostics_by_ticker[f"{ticker}_test"][
+                            "n_retained_labels"
+                        ]
+                    )
+                    for ticker in metadata["tickers"]
+                ),
+                "test_nan_labels": sum(
+                    int(
+                        prepared.diagnostics_by_ticker[f"{ticker}_test"][
+                            "n_nan_labels"
+                        ]
+                    )
+                    for ticker in metadata["tickers"]
+                ),
+                "n_test_windows": int(prepared.y_test.shape[0]),
+                "test_up_pct": safe_mean(prepared.y_test.astype(float)),
+            }
+        )
+    rows.append(pooled_row)
     return rows
 
 
@@ -2611,10 +2639,19 @@ def write_outputs(
     metadata: dict[str, Any],
 ) -> None:
     run_dir = output_dir / metadata["run_id"]
-    run_dir.mkdir(parents=True, exist_ok=True)
+    if "_run_output_dir_initialized" not in metadata:
+        if run_dir.exists():
+            raise FileExistsError(f"run artifact directory already exists: {run_dir}")
+        run_dir.mkdir(parents=True)
+        metadata["_run_output_dir_initialized"] = True
+    elif not run_dir.exists():
+        raise FileNotFoundError(f"run artifact directory missing: {run_dir}")
     pd.DataFrame(rows).to_csv(run_dir / f"{stem}.csv", index=False)
+    persisted_metadata = {
+        key: value for key, value in metadata.items() if not key.startswith("_")
+    }
     with (run_dir / "metadata.json").open("w", encoding="utf-8") as handle:
-        json.dump(metadata, handle, indent=2)
+        json.dump(persisted_metadata, handle, indent=2)
 
 
 if __name__ == "__main__":

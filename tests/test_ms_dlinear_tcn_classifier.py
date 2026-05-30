@@ -36,6 +36,7 @@ def test_ms_dlinear_tcn_forward_default_shape_dtype_and_grad():
 
     assert logits.shape == (4, 2)
     assert logits.dtype == x.dtype
+    assert logits.device == x.device
     assert logits.requires_grad is True
     assert any(
         parameter.requires_grad and parameter.grad is not None
@@ -56,6 +57,9 @@ def test_ms_dlinear_tcn_custom_num_classes_shape():
 def test_ms_dlinear_tcn_outputs_raw_logits_not_probabilities():
     torch.manual_seed(0)
     model = _make_model()
+    with torch.no_grad():
+        model.fusion_classifier.weight.zero_()
+        model.fusion_classifier.bias.copy_(torch.tensor([-1.0, 3.0]))
     x = torch.randn(6, 12, 5)
 
     logits = model(x)
@@ -121,6 +125,35 @@ def test_ms_dlinear_tcn_rejects_empty_moving_average_kernels():
             input_size=5,
             moving_avg_kernels=(),
             tcn_channels=(8, 8),
+        )
+
+
+@pytest.mark.parametrize("field_name", ["seq_len", "input_size", "num_classes"])
+def test_ms_dlinear_tcn_rejects_non_positive_core_dimensions(field_name):
+    kwargs = {
+        "seq_len": 12,
+        "input_size": 5,
+        "num_classes": 2,
+        "moving_avg_kernels": (3, 5, 9),
+        "tcn_channels": (8, 8),
+    }
+    kwargs[field_name] = 0
+    MultiScaleDLinearTCNClassifier = _get_classifier()
+
+    with pytest.raises(ValueError, match=field_name):
+        MultiScaleDLinearTCNClassifier(**kwargs)
+
+
+def test_ms_dlinear_tcn_rejects_non_positive_tcn_kernel_size():
+    MultiScaleDLinearTCNClassifier = _get_classifier()
+
+    with pytest.raises(ValueError, match="tcn_kernel_size"):
+        MultiScaleDLinearTCNClassifier(
+            seq_len=12,
+            input_size=5,
+            moving_avg_kernels=(3, 5, 9),
+            tcn_channels=(8, 8),
+            tcn_kernel_size=0,
         )
 
 

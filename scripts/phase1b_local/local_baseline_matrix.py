@@ -323,7 +323,7 @@ def main() -> None:
         calendar_split=calendar_split,
         shuffle_train_labels=args.shuffle_train_labels,
         shuffle_seed=metadata["shuffle_seed"],
-        include_test_data=not (model_family == "torch" and args.validation_only_report),
+        include_test_data=not args.validation_only_report,
     )
     manifest_rows = build_manifest_rows(metadata, candidate, prepared)
     write_outputs(output_dir, "manifest", manifest_rows, metadata)
@@ -780,15 +780,30 @@ def prepare_data(
             candidate=candidate,
         )
         if calendar_split is None:
-            train_df, val_df, test_df = make_time_splits(
+            if include_test_data:
+                train_df, val_df, test_df = make_time_splits(
+                    labeled_df,
+                    train_ratio=data_config.train_ratio,
+                    val_ratio=data_config.val_ratio,
+                    timestamp_col=data_config.timestamp_col,
+                    timezone_policy=data_config.timezone_policy,
+                )
+            else:
+                train_df, val_df = make_train_val_time_splits(
+                    labeled_df,
+                    train_ratio=data_config.train_ratio,
+                    val_ratio=data_config.val_ratio,
+                    timestamp_col=data_config.timestamp_col,
+                )
+        elif include_test_data:
+            train_df, val_df, test_df = make_calendar_time_splits(
                 labeled_df,
-                train_ratio=data_config.train_ratio,
-                val_ratio=data_config.val_ratio,
+                calendar_split,
                 timestamp_col=data_config.timestamp_col,
-                timezone_policy=data_config.timezone_policy,
+                ticker=ticker,
             )
         else:
-            train_df, val_df, test_df = make_calendar_time_splits(
+            train_df, val_df = make_calendar_train_val_splits(
                 labeled_df,
                 calendar_split,
                 timestamp_col=data_config.timestamp_col,
@@ -883,6 +898,66 @@ def make_calendar_time_splits(
     assert_nonempty_split_frame(ticker, "val", val_df)
     assert_nonempty_split_frame(ticker, "holdout", holdout_df)
     return train_df, val_df, holdout_df
+
+
+def make_train_val_time_splits(
+    df: pd.DataFrame,
+    train_ratio: float,
+    val_ratio: float,
+    timestamp_col: str,
+) -> tuple[pd.DataFrame, pd.DataFrame]:
+    if not (0.0 < train_ratio < 1.0):
+        raise ValueError(f"train_ratio must be in (0, 1), got {train_ratio}")
+    if not (0.0 < val_ratio < 1.0):
+        raise ValueError(f"val_ratio must be in (0, 1), got {val_ratio}")
+    if train_ratio + val_ratio >= 1.0:
+        raise ValueError(
+            f"train_ratio + val_ratio must be < 1, got {train_ratio + val_ratio}"
+        )
+    ordered = df.sort_values(timestamp_col).reset_index(drop=True)
+    timestamps = pd.to_datetime(ordered[timestamp_col])
+    if not timestamps.is_monotonic_increasing or timestamps.duplicated().any():
+        raise ValueError("make_train_val_time_splits requires strictly increasing timestamps")
+    row_count = len(ordered)
+    train_end = int(row_count * train_ratio)
+    val_end = train_end + int(row_count * val_ratio)
+    train = ordered.iloc[:train_end].copy(deep=True)
+    val = ordered.iloc[train_end:val_end].copy(deep=True)
+    return train, val
+
+
+def make_calendar_train_val_splits(
+    df: pd.DataFrame,
+    calendar_split: CalendarSplitSpec,
+    timestamp_col: str,
+    ticker: str,
+) -> tuple[pd.DataFrame, pd.DataFrame]:
+    if timestamp_col not in df.columns:
+        raise ValueError(f"{ticker} missing timestamp column {timestamp_col!r}")
+    timestamps = pd.to_datetime(df[timestamp_col])
+    if timestamps.isna().any():
+        bad_index = timestamps[timestamps.isna()].index[0]
+        raise ValueError(
+            f"{ticker} timestamp column {timestamp_col!r} has missing value "
+            f"at row/index {bad_index!r}"
+        )
+    frame = df.sort_values(timestamp_col).reset_index(drop=True)
+    timestamps = pd.to_datetime(frame[timestamp_col])
+    train_df = calendar_interval_frame(
+        frame,
+        timestamps,
+        calendar_split.train_start_ts,
+        calendar_split.train_end_ts,
+    )
+    val_df = calendar_interval_frame(
+        frame,
+        timestamps,
+        calendar_split.val_start_ts,
+        calendar_split.val_end_ts,
+    )
+    assert_nonempty_split_frame(ticker, "train", train_df)
+    assert_nonempty_split_frame(ticker, "val", val_df)
+    return train_df, val_df
 
 
 def calendar_interval_frame(
@@ -1737,6 +1812,7 @@ def sklearn_validation_only_result_row(
         "n_val_windows": int(len(prepared.val_dataset)),
         "train_up_pct": safe_mean(prepared.y_train.astype(float)),
         "val_up_pct": safe_mean(prepared.y_val.astype(float)),
+        **validation_only_coverage_fields(prepared.y_val),
         "val_macro_f1": float(val_metrics["macro_f1"]),
         "val_balanced_accuracy": float(val_metrics["balanced_accuracy"]),
         "val_delta_macro_f1_vs_dummy": float(val_delta),
@@ -1797,6 +1873,7 @@ def sklearn_validation_only_ticker_rows(
                 "n_val_windows": int(len(val_dataset)),
                 "train_up_pct": safe_mean(prepared.y_train.astype(float)),
                 "val_up_pct": safe_mean(y_val.astype(float)),
+                **validation_only_coverage_fields(y_val),
                 "val_macro_f1": float(val_metrics["macro_f1"]),
                 "val_balanced_accuracy": float(val_metrics["balanced_accuracy"]),
                 "val_delta_macro_f1_vs_dummy": float(val_delta),
@@ -1928,6 +2005,7 @@ def lightgbm_validation_only_result_row(
         "n_val_windows": int(len(prepared.val_dataset)),
         "train_up_pct": safe_mean(prepared.y_train.astype(float)),
         "val_up_pct": safe_mean(prepared.y_val.astype(float)),
+        **validation_only_coverage_fields(prepared.y_val),
         "val_macro_f1": float(val_metrics["macro_f1"]),
         "val_balanced_accuracy": float(val_metrics["balanced_accuracy"]),
         "val_delta_macro_f1_vs_dummy": float(val_delta),
@@ -1983,6 +2061,7 @@ def lightgbm_validation_only_ticker_rows(
                 "n_val_windows": int(len(val_dataset)),
                 "train_up_pct": safe_mean(prepared.y_train.astype(float)),
                 "val_up_pct": safe_mean(y_val.astype(float)),
+                **validation_only_coverage_fields(y_val),
                 "val_macro_f1": float(val_metrics["macro_f1"]),
                 "val_balanced_accuracy": float(val_metrics["balanced_accuracy"]),
                 "val_delta_macro_f1_vs_dummy": float(val_delta),
@@ -2342,6 +2421,7 @@ def evaluate_validation_scope(
         "n_val_windows": int(len(dataset)),
         "train_up_pct": safe_mean(y_train.astype(float)),
         "val_up_pct": safe_mean(y_eval.astype(float)),
+        **validation_only_coverage_fields(y_eval),
         "val_macro_f1": float(metrics["macro_f1"]),
         "val_balanced_accuracy": float(metrics["balanced_accuracy"]),
         **scope_diagnostics_fields(scope_name, prepared, metadata),
@@ -2461,6 +2541,38 @@ def validation_only_report_fields() -> dict[str, Any]:
         "selection_scope": "validation_only",
         "test_metrics_embargoed": True,
         "test_metrics_used": False,
+    }
+
+
+def validation_only_coverage_fields(y_eval: np.ndarray) -> dict[str, Any]:
+    labels = np.asarray(y_eval, dtype=int)
+    n_windows = int(labels.size)
+    class_0_count = int(np.sum(labels == 0))
+    class_1_count = int(np.sum(labels == 1))
+    if n_windows == 0:
+        class_0_pct = float("nan")
+        class_1_pct = float("nan")
+        trade_coverage_rate = float("nan")
+        no_trade_rate = float("nan")
+    else:
+        class_0_pct = class_0_count / n_windows
+        class_1_pct = class_1_count / n_windows
+        trade_coverage_rate = 1.0
+        no_trade_rate = 0.0
+    return {
+        "validation_coverage_scope": "post_filter_validation_windows",
+        "validation_coverage_note": (
+            "post_filter_counts_only_no_prefilter_no_trade_reconstruction"
+        ),
+        "validation_n_windows_post_filter": n_windows,
+        "validation_n_trade_windows_post_filter": n_windows,
+        "validation_n_no_trade_windows_post_filter": 0,
+        "validation_trade_coverage_rate_post_filter": trade_coverage_rate,
+        "validation_no_trade_rate_post_filter": no_trade_rate,
+        "validation_class_0_count_post_filter": class_0_count,
+        "validation_class_1_count_post_filter": class_1_count,
+        "validation_class_0_pct_post_filter": class_0_pct,
+        "validation_class_1_pct_post_filter": class_1_pct,
     }
 
 

@@ -776,8 +776,8 @@ def test_sklearn_validation_only_report_embargoes_test_metric_fields():
     prepared = _toy_prepared_data()
 
     rows = runner.run_sklearn_logreg_baseline(
-        metadata=_sklearn_metadata(),
-        candidate=_candidate(),
+        metadata=_no_trade_metadata(),
+        candidate=_no_trade_candidate(),
         prepared=prepared,
         feature_view="last_step",
         validation_only_report=True,
@@ -789,6 +789,7 @@ def test_sklearn_validation_only_report_embargoes_test_metric_fields():
     assert row["test_metrics_embargoed"] is True
     assert row["test_metrics_used"] is False
     assert row["split"] == "validation"
+    _assert_validation_only_coverage_fields(row, expected_n=len(prepared.y_val))
     _assert_validation_only_no_test_exposure(row)
     for key in [
         "model_macro_f1",
@@ -809,6 +810,42 @@ def test_sklearn_validation_only_report_embargoes_test_metric_fields():
         "ticker_dummy_stratified_macro_f1_mean",
     ]:
         assert key not in row
+
+
+def test_sklearn_validation_only_no_trade_coverage_does_not_require_test_data():
+    prepared = _prepared_without_test_data()
+
+    row = runner.run_sklearn_logreg_baseline(
+        metadata=_no_trade_metadata(),
+        candidate=_no_trade_candidate(),
+        prepared=prepared,
+        feature_view="last_step",
+        validation_only_report=True,
+    )[0]
+
+    _assert_validation_only_coverage_fields(row, expected_n=len(prepared.y_val))
+    assert row["test_metrics_used"] is False
+    _assert_validation_only_no_test_exposure(row)
+
+
+def test_validation_only_coverage_fields_disclose_post_filter_class_balance():
+    fields = runner.validation_only_coverage_fields(np.asarray([0, 0, 0, 1]))
+
+    assert fields == {
+        "validation_coverage_scope": "post_filter_validation_windows",
+        "validation_coverage_note": (
+            "post_filter_counts_only_no_prefilter_no_trade_reconstruction"
+        ),
+        "validation_n_windows_post_filter": 4,
+        "validation_n_trade_windows_post_filter": 4,
+        "validation_n_no_trade_windows_post_filter": 0,
+        "validation_trade_coverage_rate_post_filter": 1.0,
+        "validation_no_trade_rate_post_filter": 0.0,
+        "validation_class_0_count_post_filter": 3,
+        "validation_class_1_count_post_filter": 1,
+        "validation_class_0_pct_post_filter": 0.75,
+        "validation_class_1_pct_post_filter": 0.25,
+    }
 
 
 def test_sklearn_validation_only_report_keeps_validation_and_convergence_fields():
@@ -880,8 +917,8 @@ def test_sklearn_validation_only_per_ticker_outputs_pooled_and_ticker_rows():
     prepared = _toy_prepared_data()
 
     rows = runner.run_sklearn_logreg_baseline(
-        metadata=_sklearn_metadata(),
-        candidate=_candidate(),
+        metadata=_no_trade_metadata(),
+        candidate=_no_trade_candidate(),
         prepared=prepared,
         feature_view="last_step",
         validation_only_report=True,
@@ -902,6 +939,7 @@ def test_sklearn_validation_only_per_ticker_outputs_pooled_and_ticker_rows():
     assert isinstance(ticker_row["converged"], bool)
     assert isinstance(ticker_row["n_iter"], int)
     for row in rows:
+        _assert_validation_only_coverage_fields(row, expected_n=len(prepared.y_val))
         _assert_validation_only_no_test_exposure(row)
 
 
@@ -1007,6 +1045,7 @@ def test_sklearn_validation_only_cli_marks_metadata_and_result_scope(
     observed = {}
 
     def fake_prepare_data(**kwargs):
+        observed["include_test_data"] = kwargs["include_test_data"]
         return prepared
 
     def fake_sklearn_baseline(
@@ -1062,6 +1101,7 @@ def test_sklearn_validation_only_cli_marks_metadata_and_result_scope(
     assert observed == {
         "validation_only_report": True,
         "validation_only_per_ticker": False,
+        "include_test_data": False,
         "c_grid": runner.SKLEARN_LOGREG_C_GRID,
         "class_weights": runner.SKLEARN_LOGREG_CLASS_WEIGHTS,
         "metadata_report_scope": "validation_only",
@@ -1089,6 +1129,103 @@ def test_sklearn_validation_only_cli_marks_metadata_and_result_scope(
     assert results.loc[0, "decision_time_policy"] == "post_bar_close_completed_bar"
     assert results.loc[0, "scaler_id"] == "standard_pooled_train_only_v1"
     assert results.loc[0, "threshold_source"] == "fixed_pre_registered_5bps"
+
+
+def test_lightgbm_validation_only_main_skips_test_data_materialization(
+    tmp_path,
+    monkeypatch,
+):
+    observed = {}
+
+    def fake_prepare_data(**kwargs):
+        observed["include_test_data"] = kwargs["include_test_data"]
+        return _prepared_without_test_data()
+
+    def fake_lightgbm_baseline(
+        metadata,
+        candidate,
+        prepared,
+        feature_view,
+        validation_only_per_ticker=False,
+    ):
+        observed["prepared_test_dataset"] = prepared.test_dataset
+        observed["prepared_y_test"] = prepared.y_test
+        return [
+            {
+                **runner.base_result_fields(metadata, candidate),
+                **runner.validation_only_report_fields(),
+                "model_name": runner.LIGHTGBM_MODEL_NAME,
+                "model_family": "lightgbm",
+                "split": "validation",
+            }
+        ]
+
+    monkeypatch.setattr(runner, "prepare_data", fake_prepare_data)
+    monkeypatch.setattr(
+        runner,
+        "run_lightgbm_validation_only_baseline",
+        fake_lightgbm_baseline,
+    )
+    monkeypatch.setattr(
+        "sys.argv",
+        [
+            "local_baseline_matrix.py",
+            "--model-family",
+            "lightgbm",
+            "--validation-only-report",
+            "--feature-set",
+            "mentor_clean_v1",
+            "--label-mode",
+            "no_trade_band",
+            "--threshold-bps",
+            "5.0",
+            "--tickers",
+            "AAA",
+            "--output-dir",
+            str(tmp_path / "out"),
+        ],
+    )
+
+    runner.main()
+
+    assert observed == {
+        "include_test_data": False,
+        "prepared_test_dataset": None,
+        "prepared_y_test": None,
+    }
+
+
+def test_prepare_data_validation_only_does_not_call_three_way_time_split(
+    tmp_path,
+    monkeypatch,
+):
+    data_dir = tmp_path / "data"
+    data_dir.mkdir()
+    _calendar_wave_frame(days=3, bars_per_day=90).to_csv(data_dir / "AAA.csv", index=False)
+
+    def fail_make_time_splits(*args, **kwargs):
+        pytest.fail("validation-only prepare_data should not create a test split frame")
+
+    monkeypatch.setattr(runner, "make_time_splits", fail_make_time_splits)
+
+    prepared = runner.prepare_data(
+        data_dir=data_dir,
+        tickers=["AAA"],
+        feature_set_id="mentor_clean_v1",
+        feature_cols=list(runner.MENTOR_CLEAN_V1_FEATURES),
+        candidate=_no_trade_candidate(),
+        max_rows_per_ticker=None,
+        calendar_split=None,
+        shuffle_train_labels=False,
+        shuffle_seed=42,
+        include_test_data=False,
+    )
+
+    assert prepared.test_df is None
+    assert prepared.test_dataset is None
+    assert prepared.y_test is None
+    assert prepared.test_datasets_by_ticker == {}
+    assert prepared.y_test_by_ticker == {}
 
 
 def test_validation_only_manifest_omits_holdout_and_test_exposure(
@@ -1528,8 +1665,8 @@ def test_lightgbm_validation_only_report_embargoes_test_metric_fields(monkeypatc
     monkeypatch.setitem(runner.sys.modules, "lightgbm", _FakeLightGBMModule)
 
     rows = runner.run_lightgbm_validation_only_baseline(
-        metadata={**_sklearn_metadata(), "model_family": "lightgbm"},
-        candidate=_candidate(),
+        metadata={**_no_trade_metadata(), "model_family": "lightgbm"},
+        candidate=_no_trade_candidate(),
         prepared=_toy_prepared_data(),
         feature_view="last_step",
         validation_only_per_ticker=True,
@@ -1543,6 +1680,7 @@ def test_lightgbm_validation_only_report_embargoes_test_metric_fields(monkeypatc
         assert row["report_scope"] == "validation_only"
         assert row["test_metrics_used"] is False
         assert np.isfinite(row["val_macro_f1"])
+        _assert_validation_only_coverage_fields(row, expected_n=4)
         _assert_validation_only_no_test_exposure(row)
 
 
@@ -1573,8 +1711,8 @@ def test_lightgbm_validation_only_report_does_not_score_test_split(monkeypatch):
     monkeypatch.setattr(runner, "compute_baselines", guarded_compute_baselines)
 
     rows = runner.run_lightgbm_validation_only_baseline(
-        metadata={**_sklearn_metadata(), "model_family": "lightgbm"},
-        candidate=_candidate(),
+        metadata={**_no_trade_metadata(), "model_family": "lightgbm"},
+        candidate=_no_trade_candidate(),
         prepared=prepared,
         feature_view="last_step",
         validation_only_per_ticker=True,
@@ -1829,6 +1967,9 @@ def test_torch_validation_only_main_skips_test_data_materialization(
                 pytest.fail("validation-only route should not build holdout dataset")
         return original_make_dataset(df, feature_cols, candidate, timestamp_col)
 
+    def fail_calendar_time_splits(*args, **kwargs):
+        pytest.fail("validation-only route should not create a holdout split frame")
+
     def fake_run_model_once(
         model_name,
         seed,
@@ -1863,6 +2004,7 @@ def test_torch_validation_only_main_skips_test_data_materialization(
         ]
 
     monkeypatch.setattr(runner, "make_dataset", guarded_make_dataset)
+    monkeypatch.setattr(runner, "make_calendar_time_splits", fail_calendar_time_splits)
     monkeypatch.setattr(runner, "run_model_once", fake_run_model_once)
     monkeypatch.setattr(
         "sys.argv",
@@ -2161,6 +2303,7 @@ def test_run_model_once_torch_validation_only_uses_train_and_validation_not_test
         assert row["selection_scope"] == "validation_only"
         assert row["test_metrics_embargoed"] is True
         assert row["test_metrics_used"] is False
+        _assert_validation_only_coverage_fields(row, expected_n=len(prepared.y_val))
         _assert_validation_only_no_test_exposure(row)
 
 
@@ -2540,6 +2683,22 @@ def _assert_validation_only_no_test_exposure(row):
     assert leaked_test_fields == []
 
 
+def _assert_validation_only_coverage_fields(row, expected_n):
+    assert row["validation_coverage_scope"] == "post_filter_validation_windows"
+    assert row["validation_coverage_note"] == (
+        "post_filter_counts_only_no_prefilter_no_trade_reconstruction"
+    )
+    assert row["validation_n_windows_post_filter"] == expected_n
+    assert row["validation_n_trade_windows_post_filter"] == expected_n
+    assert row["validation_n_no_trade_windows_post_filter"] == 0
+    assert row["validation_trade_coverage_rate_post_filter"] == 1.0
+    assert row["validation_no_trade_rate_post_filter"] == 0.0
+    assert row["validation_class_0_count_post_filter"] == expected_n // 2
+    assert row["validation_class_1_count_post_filter"] == expected_n // 2
+    assert row["validation_class_0_pct_post_filter"] == 0.5
+    assert row["validation_class_1_pct_post_filter"] == 0.5
+
+
 def _assert_validation_only_manifest_no_holdout_test_exposure(columns):
     forbidden = {
         "test_rows",
@@ -2775,6 +2934,16 @@ def _candidate():
     )
 
 
+def _no_trade_candidate():
+    return runner.CandidateSpec(
+        "A",
+        window_size=2,
+        label_horizon_k=2,
+        label_mode="no_trade_band",
+        threshold_bps=5.0,
+    )
+
+
 def _sklearn_metadata():
     return {
         "run_id": "sklearn_toy",
@@ -2810,6 +2979,31 @@ def _sklearn_metadata():
         "model_family": "sklearn_logreg",
         "feature_view": "last_step",
     }
+
+
+def _no_trade_metadata():
+    metadata = _sklearn_metadata()
+    metadata.update(
+        {
+            "feature_set_id": "mentor_clean_v1",
+            "feature_columns": list(runner.MENTOR_CLEAN_V1_FEATURES),
+            "label_mode": "no_trade_band",
+            **runner.protocol_metadata_fields(
+                "mentor_clean_v1",
+                "no_trade_band",
+                5.0,
+                5.0,
+            ),
+            "label_semantics": "phase1b_no_trade_band_diagnostic",
+            "label_formula": (
+                "label = 1 if future_avg_r > threshold else 0 if "
+                "future_avg_r < -threshold else NaN"
+            ),
+            "neutral_policy": "abs_future_avg_return_lte_threshold_bps_is_no_trade",
+            "no_trade_band_enabled": True,
+        }
+    )
+    return metadata
 
 
 def _stationary_raw_frame(days, bars_per_day):

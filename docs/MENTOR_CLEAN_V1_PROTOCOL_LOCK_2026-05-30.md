@@ -146,6 +146,12 @@ Threshold policy:
 
 ## Blocker Decisions
 
+Superseded route-readiness note: the blocker decisions in this section are
+retained for historical context. Current non-claim route-control state is
+recorded in PM-042, PM-048, PM-050, PM-051, PM-052, and PM-053. Those later
+docs do not authorize runtime, model selection, evidence promotion, or
+test/holdout access.
+
 LightGBM decision: blocked.
 
 Reason: no current LightGBM runner/model path was found in the targeted

@@ -198,10 +198,10 @@ def main() -> None:
     args = parse_args()
     run_mode = resolve_run_mode(args)
     model_family = resolve_model_family(args)
-    if args.validation_only_report and model_family not in {"sklearn_logreg", "lightgbm"}:
+    if args.validation_only_report and model_family not in {"sklearn_logreg", "lightgbm", "torch"}:
         raise ValueError(
             "--validation-only-report requires --sklearn-baseline "
-            "or --model-family sklearn_logreg/lightgbm"
+            "or --model-family sklearn_logreg/lightgbm/torch"
         )
     if model_family == "lightgbm" and not args.validation_only_report:
         raise ValueError("--model-family lightgbm requires --validation-only-report")
@@ -229,6 +229,14 @@ def main() -> None:
     feature_set_id = resolve_feature_set(args, run_mode)
     if model_family == "lightgbm":
         validate_lightgbm_pm_route(
+            args=args,
+            run_mode=run_mode,
+            feature_set_id=feature_set_id,
+            label_mode=label_mode,
+            threshold_bps=threshold_bps,
+        )
+    if model_family == "torch" and args.validation_only_report:
+        validate_torch_validation_only_pm_route(
             args=args,
             run_mode=run_mode,
             feature_set_id=feature_set_id,
@@ -364,6 +372,8 @@ def main() -> None:
                     candidate=candidate,
                     prepared=prepared,
                     feature_cols=feature_cols,
+                    validation_only_report=args.validation_only_report,
+                    validation_only_per_ticker=args.validation_only_per_ticker,
                 )
                 result_rows.extend(row_group)
                 write_outputs(output_dir, "results", result_rows, metadata)
@@ -625,6 +635,35 @@ def validate_lightgbm_pm_route(
     if args.threshold_bps is None or threshold_bps != 5.0:
         raise ValueError(
             "--model-family lightgbm requires explicit --threshold-bps 5.0"
+        )
+
+
+def validate_torch_validation_only_pm_route(
+    args: argparse.Namespace,
+    run_mode: str,
+    feature_set_id: str,
+    label_mode: str,
+    threshold_bps: float,
+) -> None:
+    if run_mode == "full":
+        raise ValueError(
+            "--model-family torch validation-only ms_dlinear_tcn does not support --full-run"
+        )
+    if list(args.models) != ["ms_dlinear_tcn"]:
+        raise ValueError(
+            "--model-family torch validation-only requires --models ms_dlinear_tcn"
+        )
+    if feature_set_id != "mentor_clean_v1":
+        raise ValueError(
+            "--model-family torch validation-only requires --feature-set mentor_clean_v1"
+        )
+    if label_mode != "no_trade_band":
+        raise ValueError(
+            "--model-family torch validation-only requires --label-mode no_trade_band"
+        )
+    if args.threshold_bps is None or threshold_bps != 5.0:
+        raise ValueError(
+            "--model-family torch validation-only requires explicit --threshold-bps 5.0"
         )
 
 
@@ -2000,6 +2039,8 @@ def run_model_once(
     candidate: CandidateSpec,
     prepared: PreparedData,
     feature_cols: list[str],
+    validation_only_report: bool = False,
+    validation_only_per_ticker: bool = False,
 ) -> list[dict[str, Any]]:
     seed_everything(seed, deterministic=False)
     model = build_model(model_name, seq_len=candidate.window_size, input_size=len(feature_cols))
@@ -2029,6 +2070,45 @@ def run_model_once(
     history = trainer.fit(train_loader, val_loader, num_epochs=max_epochs)
     training_time_seconds = time.perf_counter() - started_at
     load_checkpoint(str(run_dir / "best.pt"), model=model, device="cpu", weights_only=True)
+
+    if validation_only_report:
+        rows = [
+            evaluate_validation_scope(
+                scope_name="pooled",
+                model=model,
+                dataset=prepared.val_dataset,
+                y_train=prepared.y_train,
+                y_eval=prepared.y_val,
+                batch_size=batch_size,
+                seed=seed,
+                metadata=metadata,
+                candidate=candidate,
+                model_name=model_name,
+                history=history,
+                training_time_seconds=training_time_seconds,
+                prepared=prepared,
+            )
+        ]
+        if validation_only_per_ticker:
+            for ticker, dataset in prepared.val_datasets_by_ticker.items():
+                rows.append(
+                    evaluate_validation_scope(
+                        scope_name=ticker,
+                        model=model,
+                        dataset=dataset,
+                        y_train=prepared.y_train_by_ticker[ticker],
+                        y_eval=prepared.y_val_by_ticker[ticker],
+                        batch_size=batch_size,
+                        seed=seed,
+                        metadata=metadata,
+                        candidate=candidate,
+                        model_name=model_name,
+                        history=history,
+                        training_time_seconds=training_time_seconds,
+                        prepared=prepared,
+                    )
+                )
+        return rows
 
     rows = [
         evaluate_scope(
@@ -2155,6 +2235,64 @@ def evaluate_scope(
         "best_epoch": history["best_epoch"],
         "best_val_macro_f1": history["best_metric"],
         "val_dummy_stratified_macro_f1_mean": val_baseline_metrics[
+            "dummy_stratified_macro_f1_mean"
+        ],
+        "val_delta_macro_f1_vs_dummy": float(val_delta),
+        "training_time_seconds": float(training_time_seconds),
+        "suspicious_status": suspicious_status,
+    }
+
+
+def evaluate_validation_scope(
+    scope_name: str,
+    model: torch.nn.Module,
+    dataset: WindowedClassificationDataset,
+    y_train: np.ndarray,
+    y_eval: np.ndarray,
+    batch_size: int,
+    seed: int,
+    metadata: dict[str, Any],
+    candidate: CandidateSpec,
+    model_name: str,
+    history: dict[str, Any],
+    training_time_seconds: float,
+    prepared: PreparedData,
+) -> dict[str, Any]:
+    loader = make_loader(dataset, batch_size, shuffle=False, seed=seed)
+    metrics, _, _ = evaluate(
+        model=model,
+        loader=loader,
+        criterion=torch.nn.CrossEntropyLoss(),
+        device="cpu",
+    )
+    baseline_metrics = compute_baselines(y_train, y_eval)
+    val_delta = (
+        metrics["macro_f1"]
+        - baseline_metrics["dummy_stratified_macro_f1_mean"]
+    )
+    suspicious_status = "ok"
+    if metrics["macro_f1"] > 0.70:
+        suspicious_status = "macro_f1_gt_0.70_check_leakage"
+
+    return {
+        **base_result_fields(metadata, candidate),
+        **validation_only_report_fields(),
+        "model_name": model_name,
+        "model_family": metadata["model_family"],
+        "ticker": scope_name,
+        "seed": seed,
+        "split": "validation",
+        **secondary_baseline_scope_fields(scope_name),
+        "n_train_windows": int(len(prepared.train_dataset)),
+        "n_val_windows": int(len(dataset)),
+        "train_up_pct": safe_mean(y_train.astype(float)),
+        "val_up_pct": safe_mean(y_eval.astype(float)),
+        "val_macro_f1": float(metrics["macro_f1"]),
+        "val_balanced_accuracy": float(metrics["balanced_accuracy"]),
+        **scope_diagnostics_fields(scope_name, prepared, metadata),
+        "best_epoch": history["best_epoch"],
+        "best_val_macro_f1": history["best_metric"],
+        "val_dummy_stratified_macro_f1_mean": baseline_metrics[
             "dummy_stratified_macro_f1_mean"
         ],
         "val_delta_macro_f1_vs_dummy": float(val_delta),

@@ -1132,23 +1132,149 @@ def test_validation_only_manifest_omits_holdout_and_test_exposure(
     _assert_validation_only_manifest_no_holdout_test_exposure(manifest.columns)
 
 
-def test_validation_only_report_rejects_torch_model_family(monkeypatch):
+def test_torch_validation_only_ms_dlinear_tcn_cli_uses_safe_branch(
+    tmp_path,
+    monkeypatch,
+):
+    prepared = _toy_prepared_data()
+    observed = {}
+
+    def fake_prepare_data(**kwargs):
+        observed["candidate"] = kwargs["candidate"]
+        return prepared
+
+    def fake_run_model_once(
+        model_name,
+        seed,
+        max_epochs,
+        batch_size,
+        learning_rate,
+        weight_decay,
+        early_stop_patience,
+        output_dir,
+        metadata,
+        candidate,
+        prepared,
+        feature_cols,
+        validation_only_report=False,
+        validation_only_per_ticker=False,
+    ):
+        observed["model_name"] = model_name
+        observed["metadata"] = metadata
+        observed["feature_cols"] = feature_cols
+        observed["validation_only_report"] = validation_only_report
+        observed["validation_only_per_ticker"] = validation_only_per_ticker
+        assert validation_only_report is True
+        assert validation_only_per_ticker is True
+        return [
+            {
+                **runner.base_result_fields(metadata, candidate),
+                **runner.validation_only_report_fields(),
+                "model_name": model_name,
+                "model_family": "torch",
+                "ticker": "pooled",
+                "seed": seed,
+                "split": "validation",
+                "n_train_windows": len(prepared.train_dataset),
+                "n_val_windows": len(prepared.val_dataset),
+                "val_macro_f1": 0.5,
+                "val_balanced_accuracy": 0.5,
+                "val_delta_macro_f1_vs_dummy": 0.0,
+                "best_epoch": 1,
+                "best_val_macro_f1": 0.5,
+                "val_dummy_stratified_macro_f1_mean": 0.5,
+            },
+            {
+                **runner.base_result_fields(metadata, candidate),
+                **runner.validation_only_report_fields(),
+                "model_name": model_name,
+                "model_family": "torch",
+                "ticker": "AAA",
+                "seed": seed,
+                "split": "validation",
+                "n_train_windows": len(prepared.train_dataset),
+                "n_val_windows": len(prepared.val_datasets_by_ticker["AAA"]),
+                "val_macro_f1": 0.5,
+                "val_balanced_accuracy": 0.5,
+                "val_delta_macro_f1_vs_dummy": 0.0,
+                "best_epoch": 1,
+                "best_val_macro_f1": 0.5,
+                "val_dummy_stratified_macro_f1_mean": 0.5,
+            },
+        ]
+
+    monkeypatch.setattr(runner, "prepare_data", fake_prepare_data)
+    monkeypatch.setattr(runner, "run_model_once", fake_run_model_once)
     monkeypatch.setattr(
         runner,
-        "prepare_data",
-        lambda **kwargs: pytest.fail("invalid validation-only mode should stop early"),
+        "evaluate_scope",
+        lambda *args, **kwargs: pytest.fail(
+            "torch validation-only route must not enter test evaluation"
+        ),
     )
     monkeypatch.setattr(
         "sys.argv",
-        [
-            "local_baseline_matrix.py",
-            "--validation-only-report",
-            "--model-family",
-            "torch",
-        ],
+        _torch_validation_only_cli_args(tmp_path / "out"),
     )
 
-    with pytest.raises(ValueError, match="validation-only-report"):
+    runner.main()
+
+    assert observed["model_name"] == "ms_dlinear_tcn"
+    assert observed["candidate"].label_mode == "no_trade_band"
+    assert observed["candidate"].threshold_bps == 5.0
+    assert observed["feature_cols"] == list(runner.FEATURE_SETS["mentor_clean_v1"])
+    assert observed["metadata"]["models"] == ["ms_dlinear_tcn"]
+    assert observed["metadata"]["model_family"] == "torch"
+    _assert_mentor_clean_validation_only_metadata(observed["metadata"])
+    results = pd.read_csv(next((tmp_path / "out").rglob("results.csv")))
+    assert set(results["ticker"]) == {"pooled", "AAA"}
+    assert set(results["split"]) == {"validation"}
+    assert set(results["report_scope"]) == {"validation_only"}
+    assert set(results["selection_scope"]) == {"validation_only"}
+    assert set(results["test_metrics_embargoed"]) == {True}
+    assert set(results["test_metrics_used"]) == {False}
+    for row in results.to_dict(orient="records"):
+        _assert_validation_only_no_test_exposure(row)
+    manifest = pd.read_csv(next((tmp_path / "out").rglob("manifest.csv")))
+    _assert_validation_only_manifest_no_holdout_test_exposure(manifest.columns)
+
+
+@pytest.mark.parametrize(
+    ("route_overrides", "expected_message"),
+    [
+        ({"feature_set": "ohlcv_only_v1"}, "mentor_clean_v1"),
+        ({"label_mode": "legacy_binary"}, "no_trade_band"),
+        ({"threshold_bps": None}, "threshold-bps 5.0"),
+        ({"threshold_bps": "1.0"}, "threshold-bps 5.0"),
+        ({"models": ["lstm"]}, "ms_dlinear_tcn"),
+        ({"models": ["ms_dlinear_tcn", "lstm"]}, "ms_dlinear_tcn"),
+        ({"full_run": True}, "full-run"),
+    ],
+)
+def test_torch_validation_only_ms_dlinear_tcn_rejects_unlocked_route_before_training(
+    tmp_path,
+    monkeypatch,
+    route_overrides,
+    expected_message,
+):
+    monkeypatch.setattr(
+        runner,
+        "prepare_data",
+        lambda **kwargs: pytest.fail("invalid torch validation route should stop early"),
+    )
+    monkeypatch.setattr(
+        runner,
+        "run_model_once",
+        lambda *args, **kwargs: pytest.fail(
+            "invalid torch validation route should not train"
+        ),
+    )
+    monkeypatch.setattr(
+        "sys.argv",
+        _torch_validation_only_cli_args(tmp_path / "out", **route_overrides),
+    )
+
+    with pytest.raises(ValueError, match=expected_message):
         runner.main()
 
 
@@ -1619,10 +1745,14 @@ def test_torch_cli_can_select_ms_dlinear_tcn_without_real_training(
         candidate,
         prepared,
         feature_cols,
+        validation_only_report=False,
+        validation_only_per_ticker=False,
     ):
         observed["model_name"] = model_name
         observed["metadata"] = metadata
         observed["feature_cols"] = feature_cols
+        observed["validation_only_report"] = validation_only_report
+        observed["validation_only_per_ticker"] = validation_only_per_ticker
         return [
             {
                 **runner.base_result_fields(metadata, candidate),
@@ -1662,8 +1792,139 @@ def test_torch_cli_can_select_ms_dlinear_tcn_without_real_training(
     assert observed["metadata"]["decision_time_policy"] == "post_bar_close_completed_bar"
     assert observed["metadata"]["scaler_id"] == "standard_pooled_train_only_v1"
     assert observed["metadata"]["threshold_source"] == "fixed_pre_registered_5bps"
+    assert observed["validation_only_report"] is False
+    assert observed["validation_only_per_ticker"] is False
     results = pd.read_csv(next((tmp_path / "out").rglob("results.csv")))
     assert results.loc[0, "model_name"] == "ms_dlinear_tcn"
+
+
+def test_run_model_once_torch_validation_only_uses_train_and_validation_not_test(
+    tmp_path,
+    monkeypatch,
+):
+    prepared = _toy_prepared_data()
+    prepared.test_datasets_by_ticker["AAA"] = prepared.test_dataset
+    observed = {}
+
+    class TinyModel(torch.nn.Module):
+        def __init__(self):
+            super().__init__()
+            self.classifier = torch.nn.Linear(2, 2)
+
+        def forward(self, x):
+            return self.classifier(x[:, -1, :])
+
+    class FakeTrainer:
+        def __init__(self, **kwargs):
+            observed["checkpoint_dir"] = kwargs["checkpoint_dir"]
+
+        def fit(self, train_loader, val_loader, num_epochs):
+            observed["fit_loaders"] = (train_loader, val_loader)
+            observed["num_epochs"] = num_epochs
+            return {"best_epoch": 1, "best_metric": 0.5}
+
+    def fake_make_loader(dataset, batch_size, shuffle, seed):
+        if dataset is prepared.train_dataset:
+            observed["train_shuffle"] = shuffle
+            return "train_loader"
+        if dataset is prepared.val_dataset:
+            validation_loaders = observed.setdefault("validation_loaders", [])
+            scope_name = "pooled" if "pooled" not in validation_loaders else "AAA"
+            validation_loaders.append(scope_name)
+            return f"{scope_name}_validation_loader"
+        if dataset is prepared.val_datasets_by_ticker["AAA"]:
+            observed.setdefault("validation_loaders", []).append("AAA")
+            return "AAA_validation_loader"
+        if dataset is prepared.test_dataset:
+            pytest.fail("torch validation-only route should not build a test loader")
+        if any(dataset is value for value in prepared.test_datasets_by_ticker.values()):
+            pytest.fail("torch validation-only route should not build ticker test loaders")
+        raise AssertionError(f"unexpected dataset: {dataset!r}")
+
+    def fake_evaluate(model, loader, criterion, device):
+        assert loader in {"pooled_validation_loader", "AAA_validation_loader"}
+        return (
+            {
+                "macro_f1": 0.5,
+                "balanced_accuracy": 0.5,
+                "precision_macro": 0.5,
+                "recall_macro": 0.5,
+                "confusion_matrix": np.asarray([[1, 1], [1, 1]]),
+                "classification_report": {},
+            },
+            None,
+            None,
+        )
+
+    def guarded_compute_baselines(y_train, y_eval):
+        if y_eval is prepared.y_test:
+            pytest.fail("torch validation-only route should not baseline pooled test labels")
+        if any(y_eval is value for value in prepared.y_test_by_ticker.values()):
+            pytest.fail("torch validation-only route should not baseline ticker test labels")
+        return {
+            "dummy_stratified_macro_f1_mean": 0.5,
+            "dummy_stratified_macro_f1_std": 0.0,
+            "dummy_prior_macro_f1": 0.5,
+            "always_up_macro_f1": 0.5,
+            "always_down_macro_f1": 0.5,
+        }
+
+    metadata = {
+        **_sklearn_metadata(),
+        **runner.validation_only_report_fields(),
+        "feature_set_id": "mentor_clean_v1",
+        "label_mode": "no_trade_band",
+        "threshold_bps": 5.0,
+        "threshold_source": "fixed_pre_registered_5bps",
+        "decision_time_policy": "post_bar_close_completed_bar",
+        "scaler_id": "standard_pooled_train_only_v1",
+        "scaler_fit_scope": "pooled_train_after_per_ticker_chronological_split",
+        "model_family": "torch",
+        "models": ["ms_dlinear_tcn"],
+    }
+    candidate = runner.CandidateSpec(
+        "A",
+        window_size=2,
+        label_horizon_k=2,
+        label_mode="no_trade_band",
+        threshold_bps=5.0,
+    )
+
+    monkeypatch.setattr(runner, "build_model", lambda *args, **kwargs: TinyModel())
+    monkeypatch.setattr(runner, "Trainer", FakeTrainer)
+    monkeypatch.setattr(runner, "make_loader", fake_make_loader)
+    monkeypatch.setattr(runner, "load_checkpoint", lambda *args, **kwargs: None)
+    monkeypatch.setattr(runner, "evaluate", fake_evaluate)
+    monkeypatch.setattr(runner, "compute_baselines", guarded_compute_baselines)
+
+    rows = runner.run_model_once(
+        model_name="ms_dlinear_tcn",
+        seed=42,
+        max_epochs=1,
+        batch_size=4,
+        learning_rate=1e-3,
+        weight_decay=0.0,
+        early_stop_patience=1,
+        output_dir=tmp_path / "out",
+        metadata=metadata,
+        candidate=candidate,
+        prepared=prepared,
+        feature_cols=["feature_a", "feature_b"],
+        validation_only_report=True,
+        validation_only_per_ticker=True,
+    )
+
+    assert observed["fit_loaders"] == ("train_loader", "pooled_validation_loader")
+    assert observed["train_shuffle"] is True
+    assert set(observed["validation_loaders"]) == {"pooled", "AAA"}
+    assert [row["ticker"] for row in rows] == ["pooled", "AAA"]
+    for row in rows:
+        assert row["split"] == "validation"
+        assert row["report_scope"] == "validation_only"
+        assert row["selection_scope"] == "validation_only"
+        assert row["test_metrics_embargoed"] is True
+        assert row["test_metrics_used"] is False
+        _assert_validation_only_no_test_exposure(row)
 
 
 def test_stationary_v1_core_manifest_only_writes_feature_metadata_without_training(
@@ -2053,6 +2314,56 @@ def _assert_validation_only_manifest_no_holdout_test_exposure(columns):
         "holdout_end_ts",
     }
     assert sorted(forbidden.intersection(columns)) == []
+
+
+def _assert_mentor_clean_validation_only_metadata(metadata):
+    assert metadata["feature_set_id"] == "mentor_clean_v1"
+    assert metadata["label_mode"] == "no_trade_band"
+    assert metadata["threshold_bps"] == 5.0
+    assert metadata["report_scope"] == "validation_only"
+    assert metadata["selection_scope"] == "validation_only"
+    assert metadata["test_metrics_embargoed"] is True
+    assert metadata["test_metrics_used"] is False
+    assert metadata["decision_time_policy"] == "post_bar_close_completed_bar"
+    assert metadata["scaler_id"] == "standard_pooled_train_only_v1"
+    assert (
+        metadata["scaler_fit_scope"]
+        == "pooled_train_after_per_ticker_chronological_split"
+    )
+    assert metadata["threshold_source"] == "fixed_pre_registered_5bps"
+
+
+def _torch_validation_only_cli_args(
+    output_dir,
+    *,
+    feature_set="mentor_clean_v1",
+    label_mode="no_trade_band",
+    threshold_bps="5.0",
+    models=("ms_dlinear_tcn",),
+    full_run=False,
+):
+    args = [
+        "local_baseline_matrix.py",
+        "--model-family",
+        "torch",
+        "--models",
+        *models,
+        "--validation-only-report",
+        "--validation-only-per-ticker",
+        "--feature-set",
+        feature_set,
+        "--label-mode",
+        label_mode,
+        "--tickers",
+        "AAA",
+        "--output-dir",
+        str(output_dir),
+    ]
+    if threshold_bps is not None:
+        args.extend(["--threshold-bps", threshold_bps])
+    if full_run:
+        args.append("--full-run")
+    return args
 
 
 def _label_diag(n_total, n_up, n_down):

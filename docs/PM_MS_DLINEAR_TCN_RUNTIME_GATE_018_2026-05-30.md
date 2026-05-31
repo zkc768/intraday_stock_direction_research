@@ -4,6 +4,27 @@ Date: 2026-05-30
 Owner: PM route control
 Status: runtime smoke blocked; runner gate required first
 
+## Superseded / Current Live State
+
+This runtime-gate packet is historical. It remains useful as the audit trail
+for why the original torch smoke was blocked, but its "current" runner state is
+superseded by later code/tests.
+
+Current live state for later PM gates:
+
+- `MultiScaleDLinearTCNClassifier` exists and is runner-wired as
+  `ms_dlinear_tcn`.
+- `--validation-only-report` now accepts the torch `ms_dlinear_tcn` route when
+  the PM locks are explicit.
+- The validation-only path must avoid test/holdout scoring and emitted
+  test/holdout metric exposure; prior runner tests cover safe branch dispatch,
+  unlocked-route rejection, validation-only result scope, and no test data
+  materialization for this route.
+- A future tiny smoke is permitted only after the current doc-reconcile commit
+  gate passes and only as a train-on-train / report-validation diagnostic. It
+  must not be read as permission for full-run, notebook execution, tuning,
+  test/holdout scoring, or any model-performance claim.
+
 ## PM Answer
 
 Ian's model-adjustment phase is close, but it is not ready to start yet.

@@ -5,6 +5,24 @@ Status: planning/template artifact only
 PM decision: prepare a conditional PM-LGBM-FULLVAL-042 command template; do not
 run it in this gate
 
+## Superseded / Current Live State
+
+This plan remains the historical PM-042 execution template. The later
+`docs/PM_LGBM_FULLVAL_042_ARTIFACT_REVIEW_2026-05-30.md` artifact review is
+the current non-claim sync target for PM-042 status.
+
+Current live state for later PM gates:
+
+- PM-042 is protocol-observability only and must not be read as LightGBM model
+  evidence, tuning permission, or test/holdout authorization.
+- "fullval" in this packet means the reviewed uncapped calendar-split
+  validation-only diagnostic route, not final validation success, endpoint
+  performance, or test readiness.
+- PM-042 does not authorize MS-DLinear+TCN tuning. It only supplies reusable
+  artifact-audit discipline: validation-only rows, route-lock metadata, embargo
+  booleans, coverage/no-trade/class-balance disclosure, and no concrete
+  test/holdout metric exposure.
+
 This plan defines the next LightGBM validation-only template after the PM-040
 bounded diagnostic smoke. It does not edit code, run the runner, train a model,
 execute notebooks, update evidence/wiki/claim-map/Zotero, tune thresholds or

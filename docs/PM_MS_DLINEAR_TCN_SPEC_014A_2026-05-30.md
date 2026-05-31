@@ -4,6 +4,28 @@ Date: 2026-05-30
 Owner: PM route control
 Status: spec lock before test-first work
 
+## Superseded / Current Live State
+
+This packet is historical. It correctly captured the pre-implementation
+test-first boundary, but it no longer describes the live route state.
+
+Current live state for later PM gates:
+
+- `ml_utils/models/ms_dlinear_tcn_classifier.py` defines
+  `MultiScaleDLinearTCNClassifier`.
+- `tests/test_ms_dlinear_tcn_classifier.py` covers the combined model shape,
+  raw-logit, no-stock-embedding, and gradient contract.
+- `scripts/phase1b_local/local_baseline_matrix.py` wires
+  `--model-family torch --models ms_dlinear_tcn`.
+- Runtime authorization is not granted by this historical spec. Any future
+  smoke must use the committed validation-only route locks, including
+  `--validation-only-report`, `--validation-only-per-ticker`,
+  `--feature-set mentor_clean_v1`, `--label-mode no_trade_band`, and explicit
+  `--threshold-bps 5.0`.
+- Validation diagnostics remain protocol/runtime observability only. This doc
+  does not authorize test/holdout scoring, threshold tuning, hyperparameter
+  search, model-capacity tuning, notebook execution, or performance claims.
+
 ## Goal
 
 Move Ian's combined MS-DLinear+TCN route from raw notebook idea to a

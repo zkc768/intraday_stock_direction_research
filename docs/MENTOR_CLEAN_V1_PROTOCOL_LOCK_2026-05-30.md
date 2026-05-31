@@ -4,6 +4,29 @@ Date: 2026-05-30
 Task id: PM-LOCK-002
 Status: protocol lock packet only
 
+## Superseded / Current Live State
+
+This protocol lock remains the source for route locks, but several blocker
+statements below are historical. Later gates added git-visible LightGBM
+validation-only planning/review artifacts and a combined MS-DLinear+TCN
+model/runner path.
+
+Current live state for later PM gates:
+
+- `mentor_clean_v1`, `no_trade_band`, explicit fixed `threshold_bps=5.0`,
+  `post_bar_close_completed_bar`, and pooled train-only scaling after
+  per-ticker chronological split remain mandatory locks.
+- LightGBM PM-042 is recorded only as diagnostic/protocol observability, not
+  model-performance evidence and not permission to tune or open test/holdout.
+- Combined MS-DLinear+TCN now exists as a canonical `ml_utils` model and runner
+  route, but any smoke must stay tiny, train-on-train, validation-only, and
+  test/holdout-embargoed.
+- "Ready" in the feature table below means post-bar-close feature availability
+  under this protocol lock only; it is not experiment readiness, model
+  evidence, or test/holdout authorization.
+- Papers may motivate design constraints only. They cannot select thresholds,
+  tune capacity, authorize test/holdout access, or serve as local evidence.
+
 This packet reconciles Ian's 2026-05-29 mentor direction with the current
 `hf_stock_clf` runner state and the `stock_ml_knowledge_base`
 mentor-route artifacts. It is intentionally docs-only: no `ml_utils`, runner,

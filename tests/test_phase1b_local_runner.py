@@ -759,6 +759,19 @@ def test_sklearn_logreg_custom_class_weights_are_used():
     assert row["class_weight"] == "balanced"
 
 
+def test_sklearn_non_validation_requires_test_data():
+    prepared = _prepared_without_test_data()
+
+    with pytest.raises(ValueError, match="test data is required"):
+        runner.run_sklearn_logreg_baseline(
+            metadata=_sklearn_metadata(),
+            candidate=_candidate(),
+            prepared=prepared,
+            feature_view="last_step",
+            validation_only_report=False,
+        )
+
+
 def test_sklearn_validation_only_report_embargoes_test_metric_fields():
     prepared = _toy_prepared_data()
 
@@ -1798,12 +1811,232 @@ def test_torch_cli_can_select_ms_dlinear_tcn_without_real_training(
     assert results.loc[0, "model_name"] == "ms_dlinear_tcn"
 
 
+def test_torch_validation_only_main_skips_test_data_materialization(
+    tmp_path,
+    monkeypatch,
+):
+    data_dir = tmp_path / "data"
+    output_dir = tmp_path / "out"
+    data_dir.mkdir()
+    _calendar_wave_frame(days=3, bars_per_day=90).to_csv(data_dir / "AAA.csv", index=False)
+    original_make_dataset = runner.make_dataset
+    observed = {}
+
+    def guarded_make_dataset(df, feature_cols, candidate, timestamp_col):
+        if "ticker" in df.columns and set(df["ticker"]) == {"AAA"}:
+            min_ts = pd.to_datetime(df[timestamp_col]).min()
+            if min_ts.date() == pd.Timestamp("2024-01-04").date():
+                pytest.fail("validation-only route should not build holdout dataset")
+        return original_make_dataset(df, feature_cols, candidate, timestamp_col)
+
+    def fake_run_model_once(
+        model_name,
+        seed,
+        max_epochs,
+        batch_size,
+        learning_rate,
+        weight_decay,
+        early_stop_patience,
+        output_dir,
+        metadata,
+        candidate,
+        prepared,
+        feature_cols,
+        validation_only_report=False,
+        validation_only_per_ticker=False,
+    ):
+        observed["prepared"] = prepared
+        observed["validation_only_report"] = validation_only_report
+        observed["validation_only_per_ticker"] = validation_only_per_ticker
+        return [
+            {
+                **runner.base_result_fields(metadata, candidate),
+                **runner.validation_only_report_fields(),
+                "model_name": model_name,
+                "model_family": "torch",
+                "ticker": "pooled",
+                "seed": seed,
+                "split": "validation",
+                "n_train_windows": len(prepared.train_dataset),
+                "n_val_windows": len(prepared.val_dataset),
+            }
+        ]
+
+    monkeypatch.setattr(runner, "make_dataset", guarded_make_dataset)
+    monkeypatch.setattr(runner, "run_model_once", fake_run_model_once)
+    monkeypatch.setattr(
+        "sys.argv",
+        [
+            *_torch_validation_only_cli_args(output_dir),
+            "--data-dir",
+            str(data_dir),
+            "--split-mode",
+            "calendar",
+            "--train-start-ts",
+            "2024-01-02 09:30",
+            "--train-end-ts",
+            "2024-01-02 17:00",
+            "--val-start-ts",
+            "2024-01-03 09:30",
+            "--val-end-ts",
+            "2024-01-03 17:00",
+            "--holdout-start-ts",
+            "2024-01-04 09:30",
+            "--holdout-end-ts",
+            "2024-01-04 17:00",
+        ],
+    )
+
+    runner.main()
+
+    prepared = observed["prepared"]
+    assert observed["validation_only_report"] is True
+    assert observed["validation_only_per_ticker"] is True
+    assert prepared.test_dataset is None
+    assert prepared.test_datasets_by_ticker == {}
+    assert prepared.y_test is None
+    assert prepared.y_test_by_ticker == {}
+
+
+def test_non_validation_torch_path_requires_test_data(tmp_path):
+    prepared = _prepared_without_test_data()
+    metadata = {
+        **_sklearn_metadata(),
+        "model_family": "torch",
+        "models": ["ms_dlinear_tcn"],
+    }
+
+    with pytest.raises(ValueError, match="test data is required"):
+        runner.run_model_once(
+            model_name="ms_dlinear_tcn",
+            seed=42,
+            max_epochs=1,
+            batch_size=4,
+            learning_rate=1e-3,
+            weight_decay=0.0,
+            early_stop_patience=1,
+            output_dir=tmp_path / "out",
+            metadata=metadata,
+            candidate=_candidate(),
+            prepared=prepared,
+            feature_cols=["feature_a", "feature_b"],
+            validation_only_report=False,
+            validation_only_per_ticker=False,
+        )
+
+
+def test_non_validation_manifest_rows_require_test_data():
+    with pytest.raises(ValueError, match="test data is required"):
+        runner.build_manifest_rows(
+            metadata=_manifest_metadata(["AAA"]),
+            candidate=_candidate(),
+            prepared=_prepared_without_test_data(),
+        )
+
+
+def test_non_validation_torch_main_keeps_test_data_materialization(
+    tmp_path,
+    monkeypatch,
+):
+    data_dir = tmp_path / "data"
+    output_dir = tmp_path / "out"
+    data_dir.mkdir()
+    _calendar_wave_frame(days=3, bars_per_day=90).to_csv(data_dir / "AAA.csv", index=False)
+    observed = {"holdout_dataset_count": 0}
+    original_make_dataset = runner.make_dataset
+
+    def tracking_make_dataset(df, feature_cols, candidate, timestamp_col):
+        if "ticker" in df.columns and set(df["ticker"]) == {"AAA"}:
+            min_ts = pd.to_datetime(df[timestamp_col]).min()
+            if min_ts.date() == pd.Timestamp("2024-01-04").date():
+                observed["holdout_dataset_count"] += 1
+        return original_make_dataset(df, feature_cols, candidate, timestamp_col)
+
+    def fake_run_model_once(
+        model_name,
+        seed,
+        max_epochs,
+        batch_size,
+        learning_rate,
+        weight_decay,
+        early_stop_patience,
+        output_dir,
+        metadata,
+        candidate,
+        prepared,
+        feature_cols,
+        validation_only_report=False,
+        validation_only_per_ticker=False,
+    ):
+        observed["validation_only_report"] = validation_only_report
+        observed["test_dataset_len"] = len(prepared.test_dataset)
+        observed["y_test_len"] = len(prepared.y_test)
+        observed["test_tickers"] = sorted(prepared.test_datasets_by_ticker)
+        return [
+            {
+                **runner.base_result_fields(metadata, candidate),
+                "model_name": model_name,
+                "model_family": "torch",
+                "ticker": "pooled",
+                "seed": seed,
+                "split": "test",
+                "n_test_windows": len(prepared.test_dataset),
+            }
+        ]
+
+    monkeypatch.setattr(runner, "make_dataset", tracking_make_dataset)
+    monkeypatch.setattr(runner, "run_model_once", fake_run_model_once)
+    monkeypatch.setattr(
+        "sys.argv",
+        [
+            "local_baseline_matrix.py",
+            "--model-family",
+            "torch",
+            "--models",
+            "ms_dlinear_tcn",
+            "--feature-set",
+            "mentor_clean_v1",
+            "--label-mode",
+            "no_trade_band",
+            "--threshold-bps",
+            "5.0",
+            "--tickers",
+            "AAA",
+            "--output-dir",
+            str(output_dir),
+            "--data-dir",
+            str(data_dir),
+            "--split-mode",
+            "calendar",
+            "--train-start-ts",
+            "2024-01-02 09:30",
+            "--train-end-ts",
+            "2024-01-02 17:00",
+            "--val-start-ts",
+            "2024-01-03 09:30",
+            "--val-end-ts",
+            "2024-01-03 17:00",
+            "--holdout-start-ts",
+            "2024-01-04 09:30",
+            "--holdout-end-ts",
+            "2024-01-04 17:00",
+        ],
+    )
+
+    runner.main()
+
+    assert observed["validation_only_report"] is False
+    assert observed["holdout_dataset_count"] >= 2
+    assert observed["test_dataset_len"] > 0
+    assert observed["y_test_len"] == observed["test_dataset_len"]
+    assert observed["test_tickers"] == ["AAA"]
+
+
 def test_run_model_once_torch_validation_only_uses_train_and_validation_not_test(
     tmp_path,
     monkeypatch,
 ):
-    prepared = _toy_prepared_data()
-    prepared.test_datasets_by_ticker["AAA"] = prepared.test_dataset
+    prepared = _prepared_without_test_data()
     observed = {}
 
     class TinyModel(torch.nn.Module):
@@ -1917,6 +2150,10 @@ def test_run_model_once_torch_validation_only_uses_train_and_validation_not_test
     assert observed["fit_loaders"] == ("train_loader", "pooled_validation_loader")
     assert observed["train_shuffle"] is True
     assert set(observed["validation_loaders"]) == {"pooled", "AAA"}
+    assert prepared.test_dataset is None
+    assert prepared.y_test is None
+    assert prepared.test_datasets_by_ticker == {}
+    assert prepared.y_test_by_ticker == {}
     assert [row["ticker"] for row in rows] == ["pooled", "AAA"]
     for row in rows:
         assert row["split"] == "validation"
@@ -2504,6 +2741,27 @@ def _toy_prepared_data():
             "AAA_val": _split_diag(n_rows=4, n_retained=4, n_nan=0),
             "AAA_test": _split_diag(n_rows=4, n_retained=4, n_nan=0),
         },
+    )
+
+
+def _prepared_without_test_data():
+    prepared = _toy_prepared_data()
+    return runner.PreparedData(
+        train_df=prepared.train_df,
+        val_df=prepared.val_df,
+        test_df=None,
+        train_dataset=prepared.train_dataset,
+        val_dataset=prepared.val_dataset,
+        test_dataset=None,
+        val_datasets_by_ticker=prepared.val_datasets_by_ticker,
+        test_datasets_by_ticker={},
+        y_train=prepared.y_train,
+        y_val=prepared.y_val,
+        y_test=None,
+        y_train_by_ticker=prepared.y_train_by_ticker,
+        y_val_by_ticker=prepared.y_val_by_ticker,
+        y_test_by_ticker={},
+        diagnostics_by_ticker=prepared.diagnostics_by_ticker,
     )
 
 

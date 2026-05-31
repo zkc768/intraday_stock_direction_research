@@ -119,15 +119,15 @@ class CalendarSplitSpec:
 class PreparedData:
     train_df: pd.DataFrame
     val_df: pd.DataFrame
-    test_df: pd.DataFrame
+    test_df: pd.DataFrame | None
     train_dataset: WindowedClassificationDataset
     val_dataset: WindowedClassificationDataset
-    test_dataset: WindowedClassificationDataset
+    test_dataset: WindowedClassificationDataset | None
     val_datasets_by_ticker: dict[str, WindowedClassificationDataset]
     test_datasets_by_ticker: dict[str, WindowedClassificationDataset]
     y_train: np.ndarray
     y_val: np.ndarray
-    y_test: np.ndarray
+    y_test: np.ndarray | None
     y_train_by_ticker: dict[str, np.ndarray]
     y_val_by_ticker: dict[str, np.ndarray]
     y_test_by_ticker: dict[str, np.ndarray]
@@ -323,6 +323,7 @@ def main() -> None:
         calendar_split=calendar_split,
         shuffle_train_labels=args.shuffle_train_labels,
         shuffle_seed=metadata["shuffle_seed"],
+        include_test_data=not (model_family == "torch" and args.validation_only_report),
     )
     manifest_rows = build_manifest_rows(metadata, candidate, prepared)
     write_outputs(output_dir, "manifest", manifest_rows, metadata)
@@ -746,6 +747,7 @@ def prepare_data(
     shuffle_train_labels: bool,
     shuffle_seed: int,
     calendar_split: CalendarSplitSpec | None = None,
+    include_test_data: bool = True,
 ) -> PreparedData:
     if calendar_split is not None and max_rows_per_ticker is not None:
         raise ValueError("calendar split cannot be used with max_rows_per_ticker")
@@ -795,8 +797,13 @@ def prepare_data(
         split_frames = {
             "train": trim_for_windows(train_df, candidate, data_config.timestamp_col),
             "val": trim_for_windows(val_df, candidate, data_config.timestamp_col),
-            "test": trim_for_windows(test_df, candidate, data_config.timestamp_col),
         }
+        if include_test_data:
+            split_frames["test"] = trim_for_windows(
+                test_df,
+                candidate,
+                data_config.timestamp_col,
+            )
         if calendar_split is not None:
             for split_name, split_df in split_frames.items():
                 display_name = "holdout" if split_name == "test" else split_name
@@ -813,15 +820,18 @@ def prepare_data(
         diagnostics_by_ticker[f"{ticker}_label"] = label_diagnostics
         train_frames.append(split_frames["train"])
         val_frames.append(split_frames["val"])
-        test_frames.append(split_frames["test"])
+        if include_test_data:
+            test_frames.append(split_frames["test"])
 
     train_all = pd.concat(train_frames, ignore_index=True)
     val_all = pd.concat(val_frames, ignore_index=True)
-    test_all = pd.concat(test_frames, ignore_index=True)
     scaler = fit_scaler_on_train(train_all, feature_cols, scaler_type="standard")
     train_scaled = transform_split(train_all, scaler, feature_cols)
     val_scaled = transform_split(val_all, scaler, feature_cols)
-    test_scaled = transform_split(test_all, scaler, feature_cols)
+    test_scaled = None
+    if include_test_data:
+        test_all = pd.concat(test_frames, ignore_index=True)
+        test_scaled = transform_split(test_all, scaler, feature_cols)
     return build_prepared_data(
         train_df=train_scaled,
         val_df=val_scaled,
@@ -830,6 +840,7 @@ def prepare_data(
         candidate=candidate,
         timestamp_col=data_config.timestamp_col,
         diagnostics_by_ticker=diagnostics_by_ticker,
+        include_test_data=include_test_data,
     )
 
 
@@ -1433,39 +1444,54 @@ def shuffle_labels(df: pd.DataFrame, label_col: str, seed: int) -> pd.DataFrame:
 def build_prepared_data(
     train_df: pd.DataFrame,
     val_df: pd.DataFrame,
-    test_df: pd.DataFrame,
+    test_df: pd.DataFrame | None,
     feature_cols: list[str],
     candidate: CandidateSpec,
     timestamp_col: str,
     diagnostics_by_ticker: dict[str, dict[str, Any]],
+    include_test_data: bool = True,
 ) -> PreparedData:
     train_dataset = make_dataset(train_df, feature_cols, candidate, timestamp_col)
     val_dataset = make_dataset(val_df, feature_cols, candidate, timestamp_col)
-    test_dataset = make_dataset(test_df, feature_cols, candidate, timestamp_col)
     assert_nonempty_dataset("train", train_dataset)
     assert_nonempty_dataset("val", val_dataset)
-    assert_nonempty_dataset("test", test_dataset)
 
     val_datasets_by_ticker = {}
     test_datasets_by_ticker = {}
     y_train_by_ticker = {}
     y_val_by_ticker = {}
     y_test_by_ticker = {}
-    for ticker in sorted(test_df["ticker"].unique()):
+    tickers = sorted(train_df["ticker"].unique())
+    for ticker in tickers:
         train_ticker_df = train_df.loc[train_df["ticker"] == ticker].copy(deep=True)
         val_ticker_df = val_df.loc[val_df["ticker"] == ticker].copy(deep=True)
-        test_ticker_df = test_df.loc[test_df["ticker"] == ticker].copy(deep=True)
         train_ticker_dataset = make_dataset(train_ticker_df, feature_cols, candidate, timestamp_col)
         val_ticker_dataset = make_dataset(val_ticker_df, feature_cols, candidate, timestamp_col)
-        test_ticker_dataset = make_dataset(test_ticker_df, feature_cols, candidate, timestamp_col)
         assert_nonempty_dataset(f"{ticker} train", train_ticker_dataset)
         assert_nonempty_dataset(f"{ticker} val", val_ticker_dataset)
-        assert_nonempty_dataset(f"{ticker} test", test_ticker_dataset)
         y_train_by_ticker[ticker] = dataset_labels(train_ticker_dataset)
         y_val_by_ticker[ticker] = dataset_labels(val_ticker_dataset)
-        y_test_by_ticker[ticker] = dataset_labels(test_ticker_dataset)
         val_datasets_by_ticker[ticker] = val_ticker_dataset
-        test_datasets_by_ticker[ticker] = test_ticker_dataset
+
+    test_dataset = None
+    y_test = None
+    if include_test_data:
+        if test_df is None:
+            raise ValueError("test data is required for non-validation evaluation")
+        test_dataset = make_dataset(test_df, feature_cols, candidate, timestamp_col)
+        assert_nonempty_dataset("test", test_dataset)
+        for ticker in tickers:
+            test_ticker_df = test_df.loc[test_df["ticker"] == ticker].copy(deep=True)
+            test_ticker_dataset = make_dataset(
+                test_ticker_df,
+                feature_cols,
+                candidate,
+                timestamp_col,
+            )
+            assert_nonempty_dataset(f"{ticker} test", test_ticker_dataset)
+            y_test_by_ticker[ticker] = dataset_labels(test_ticker_dataset)
+            test_datasets_by_ticker[ticker] = test_ticker_dataset
+        y_test = dataset_labels(test_dataset)
 
     return PreparedData(
         train_df=train_df,
@@ -1478,7 +1504,7 @@ def build_prepared_data(
         test_datasets_by_ticker=test_datasets_by_ticker,
         y_train=dataset_labels(train_dataset),
         y_val=dataset_labels(val_dataset),
-        y_test=dataset_labels(test_dataset),
+        y_test=y_test,
         y_train_by_ticker=y_train_by_ticker,
         y_val_by_ticker=y_val_by_ticker,
         y_test_by_ticker=y_test_by_ticker,
@@ -1620,6 +1646,7 @@ def run_sklearn_logreg_baseline(
             )
         return rows
 
+    require_test_data(prepared, require_per_ticker=False)
     x_test = dataset_features(prepared.test_dataset, feature_view)
     test_pred = best["model"].predict(x_test)
     test_metrics = compute_classification_metrics(prepared.y_test, test_pred)
@@ -2042,6 +2069,8 @@ def run_model_once(
     validation_only_report: bool = False,
     validation_only_per_ticker: bool = False,
 ) -> list[dict[str, Any]]:
+    if not validation_only_report:
+        require_test_data(prepared)
     seed_everything(seed, deterministic=False)
     model = build_model(model_name, seq_len=candidate.window_size, input_size=len(feature_cols))
     train_loader = make_loader(prepared.train_dataset, batch_size, shuffle=True, seed=seed)
@@ -2146,6 +2175,32 @@ def run_model_once(
             )
         )
     return rows
+
+
+def require_test_data(
+    prepared: PreparedData,
+    require_per_ticker: bool = True,
+) -> None:
+    if (
+        prepared.test_df is None
+        or prepared.test_dataset is None
+        or prepared.y_test is None
+    ):
+        raise ValueError("test data is required for non-validation evaluation")
+    if require_per_ticker and (
+        not prepared.test_datasets_by_ticker
+        or not prepared.y_test_by_ticker
+    ):
+        raise ValueError("test data is required for non-validation evaluation")
+
+
+def require_test_label_data(prepared: PreparedData) -> None:
+    if (
+        prepared.test_df is None
+        or prepared.y_test is None
+        or not prepared.y_test_by_ticker
+    ):
+        raise ValueError("test data is required for non-validation evaluation")
 
 
 def build_model(model_name: str, seq_len: int, input_size: int) -> torch.nn.Module:
@@ -2612,6 +2667,8 @@ def build_manifest_rows(
 ) -> list[dict[str, Any]]:
     rows = []
     validation_only_report = metadata.get("report_scope") == "validation_only"
+    if not validation_only_report:
+        require_test_label_data(prepared)
     for ticker in metadata["tickers"]:
         label_diag = prepared.diagnostics_by_ticker[f"{ticker}_label"]
         train_diag = prepared.diagnostics_by_ticker[f"{ticker}_train"]

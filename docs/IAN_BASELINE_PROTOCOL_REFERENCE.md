@@ -18,7 +18,8 @@ Current live state for later PM gates:
   per-ticker chronological split remain mandatory locks.
 - LightGBM PM-042 is recorded only as diagnostic/protocol observability, not
   model-performance evidence and not permission to tune or open test/holdout.
-- Combined MS-DLinear+TCN now exists as a canonical `ml_utils` model and runner
+- Combined MS-DLinear+TCN existed as a canonical archived helper-library model
+  and runner
   route, but any smoke must stay tiny, train-on-train, validation-only, and
   test/holdout-embargoed.
 - "Ready" in the feature table below means post-bar-close feature availability
@@ -28,8 +29,8 @@ Current live state for later PM gates:
   tune capacity, authorize test/holdout access, or serve as local evidence.
 
 This packet reconciles Ian's 2026-05-29 mentor direction with the current
-`hf_stock_clf` runner state and the `stock_ml_knowledge_base`
-mentor-route artifacts. It is intentionally docs-only: no `ml_utils`, runner,
+`intraday_stock_direction_research` historical runner state and the `stock_ml_knowledge_base`
+mentor-route artifacts. It is intentionally docs-only: no helper-library, runner,
 notebook, training, Zotero, wiki, or evidence-matrix changes are part of this
 lock.
 
@@ -44,7 +45,7 @@ MS-DLinear+TCN only when those routes are real and fair.
 Historical code state:
 
 - `mentor_clean_v1` existed in
-  `archive/legacy_ml_utils_reference/scripts/phase1b_local/local_baseline_matrix.py`.
+  `archive/legacy_model_runner_reference/scripts/phase1b_local/local_baseline_matrix.py`.
 - The runner's `resolve_feature_set(...)` defaults to `mentor_clean_v1`.
 - The runner supports torch `lstm`, `tcn`, and `dlinear`, plus a separate
   validation/report path for `sklearn_logreg`.
@@ -71,7 +72,7 @@ Allowed under this packet:
 
 Forbidden under this packet:
 
-- Editing `ml_utils`, the runner, notebooks, data, evidence matrix, wiki, or
+- Editing the archived helper library, the runner, notebooks, data, evidence matrix, wiki, or
   Zotero.
 - Running training, notebooks, full baselines, Colab jobs, or paper-table
   regeneration.
@@ -156,9 +157,8 @@ test/holdout access.
 LightGBM decision: blocked.
 
 Reason: no LightGBM runner/model path was found in the historical
-`archive/legacy_ml_utils_reference/scripts/phase1b_local`,
-`archive/legacy_ml_utils_reference/ml_utils/models`, and
-`archive/legacy_ml_utils_reference/tests` search. The
+archived runner scripts, archived helper-library model files, and archived
+tests. The
 `sklearn_logreg` validation-only path can be used as a tiny sanity baseline, but
 it must not be renamed or reported as LightGBM.
 
@@ -220,16 +220,16 @@ under the locked post-bar-close, train-only-scaler, fixed-5bps no-trade-band
 protocol.
 
 Allowed files/actions:
-- Read hf_stock_clf/AGENTS.md and docs/MENTOR_CLEAN_V1_PROTOCOL_LOCK_2026-05-30.md.
+- Read intraday_stock_direction_research/AGENTS.md and docs/IAN_BASELINE_PROTOCOL_REFERENCE.md.
 - For historical reconstruction only, inspect argparse in
-  `archive/legacy_ml_utils_reference/scripts/phase1b_local/local_baseline_matrix.py`.
+  `archive/legacy_model_runner_reference/scripts/phase1b_local/local_baseline_matrix.py`.
 - Run at most one existing sklearn_logreg validation-only smoke if CLI flags
   confirm support.
 - Write only to a new, clearly named validation output directory under
-  hf_stock_clf/checkpoints/mentor_clean_v1_tiny_validation_2026-05-30/.
+  intraday_stock_direction_research/checkpoints/mentor_clean_v1_tiny_validation_2026-05-30/.
 
 Forbidden:
-- No ml_utils edits.
+- No archived helper-library edits.
 - No runner edits.
 - No notebook execution.
 - No torch training.

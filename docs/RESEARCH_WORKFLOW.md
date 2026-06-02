@@ -1,6 +1,6 @@
 # Research Workflow
 
-> Use this workflow to start a new `hf_stock_clf` research notebook. The goal is
+> Use this workflow to start a new `intraday_stock_direction_research` research notebook. The goal is
 > a clean, linear analysis that Ian and future you can read without opening a
 > pile of PM documents.
 >
@@ -20,7 +20,7 @@ Use short, sortable, snake_case names:
 Examples:
 
 ```text
-04_ian_validation.ipynb
+04_ian_research_memo.ipynb
 05_lgbm_msdt_validation.ipynb
 06_threshold_sensitivity.ipynb
 07_selective_prediction.ipynb
@@ -268,8 +268,8 @@ Weak/mixed results should be described as weak/mixed.
 
 ## 5. When To Touch Other Project Areas
 
-- **Archived helpers**: old `ml_utils`, tests, reference excerpts, and CLI
-  scripts live under `archive/legacy_ml_utils_reference/`. They are historical
+- **Archived helpers**: old helper library, tests, reference excerpts, and CLI
+  scripts live under `archive/legacy_model_runner_reference/`. They are historical
   reference only.
 - **New helpers**: rebuild a helper only after a notebook proves the logic is
   reused, safety-critical, and testable.

@@ -1,4 +1,4 @@
-# AGENTS.md — hf_stock_clf research project
+# AGENTS.md — intraday_stock_direction_research research project
 <!-- AGENTS_VERSION: v5.1-research -->
 
 > This is a research project, not a backend project and not a general ML
@@ -19,7 +19,7 @@
 
 ## 1. Project Identity
 
-- **Project**: `hf_stock_clf`, a Northeastern thesis project on high-frequency
+- **Project**: `intraday_stock_direction_research`, a Northeastern thesis project on high-frequency
   stock direction classification.
 - **Research question**: Can 5-minute bar data support an honest directional
   classifier that beats simple baselines under chronological validation?
@@ -27,7 +27,7 @@
   protocol is trustworthy.
 - **Working style**: one research question at a time; one readable notebook per
   experiment; no extra process documents unless the user asks.
-- **Role of archived `ml_utils/`**: historical reference only. Do not import it
+- **Role of the archived helper library**: historical reference only. Do not import it
   in active notebooks unless the user explicitly asks for historical
   reproduction or a new helper-library rebuild.
 
@@ -64,7 +64,7 @@ New notebook names should be short, sortable, and snake_case:
 Examples:
 
 ```text
-04_ian_validation.ipynb
+04_ian_research_memo.ipynb
 05_lgbm_msdt_validation.ipynb
 06_threshold_sensitivity.ipynb
 07_selective_prediction.ipynb

@@ -1,8 +1,9 @@
-# Legacy ml_utils Reference
+# Legacy Model Runner Reference
 
 This archive contains the old helper library, tests, reference excerpts, runner
 scripts, pytest configuration, construction plan, and the previous
-`04_ian_validation` notebook that orchestrated `ml_utils`.
+`04_ian_validation_model_runner_orchestration.ipynb` notebook that orchestrated
+the archived helper library.
 
 It is not active project code. Do not import from this archive in current
 research notebooks unless the user explicitly asks for historical reproduction
@@ -13,5 +14,5 @@ The active project entry is:
 ```text
 AGENTS.md
 docs/RESEARCH_WORKFLOW.md
-notebooks/04_ian_validation.ipynb
+notebooks/04_ian_research_memo.ipynb
 ```

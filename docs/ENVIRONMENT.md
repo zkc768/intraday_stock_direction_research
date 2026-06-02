@@ -1,4 +1,4 @@
-# ENVIRONMENT.md — hf_stock_clf
+# ENVIRONMENT.md — intraday_stock_direction_research
 
 This file records the local Python interpreter and validation commands used by Codex.
 

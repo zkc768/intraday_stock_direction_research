@@ -19,7 +19,7 @@ from intraday_research.validation_pipeline import (  # noqa: E402
 )
 
 
-def parse_args() -> argparse.Namespace:
+def parse_args(argv=None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description="Build a validation-only baseline_v1 smoke report from data/*.csv."
     )
@@ -30,7 +30,37 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--window-size", type=int, default=12)
     parser.add_argument("--diagnostic-max-train-rows", type=int, default=20000)
     parser.add_argument("--walk-forward-folds", type=int, default=3)
-    return parser.parse_args()
+    parser.add_argument(
+        "--skip-mutual-information",
+        action="store_true",
+        help="Skip the optional mutual-information feature diagnostic.",
+    )
+    parser.add_argument(
+        "--skip-feature-ablation",
+        action="store_true",
+        help="Skip the optional leave-one-feature-out diagnostic.",
+    )
+    parser.add_argument(
+        "--skip-lightgbm",
+        action="store_true",
+        help="Skip the optional LightGBM tiny adapter diagnostic.",
+    )
+    parser.add_argument(
+        "--window-max-rows-per-ticker-split",
+        type=int,
+        default=5000,
+        help=(
+            "Cap rows per ticker/split before smoke window construction; "
+            "use 0 to disable the cap."
+        ),
+    )
+    args = parser.parse_args(argv)
+    if args.window_max_rows_per_ticker_split is not None:
+        if args.window_max_rows_per_ticker_split < 0:
+            parser.error("--window-max-rows-per-ticker-split must be non-negative.")
+        if args.window_max_rows_per_ticker_split == 0:
+            args.window_max_rows_per_ticker_split = None
+    return args
 
 
 def json_default(value):
@@ -53,6 +83,10 @@ def main() -> None:
         window_size=args.window_size,
         diagnostic_max_train_rows=args.diagnostic_max_train_rows,
         walk_forward_folds=args.walk_forward_folds,
+        include_mutual_information=not args.skip_mutual_information,
+        include_feature_ablation=not args.skip_feature_ablation,
+        include_lightgbm=not args.skip_lightgbm,
+        window_max_rows_per_ticker_split=args.window_max_rows_per_ticker_split,
     )
     print(json.dumps(report, indent=2, default=json_default))
 

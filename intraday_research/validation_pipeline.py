@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import importlib.util
+import time
 import warnings
 from pathlib import Path
 
@@ -44,6 +45,47 @@ CALENDAR_SPLITS = {
 EXPECTED_COLUMNS = ("timestamp", "open", "high", "low", "close", "volume")
 DEFAULT_DIAGNOSTIC_TRAIN_CAP = 20000
 ROW_SUBSAMPLE_STRATEGY = "uniform_index_stride_across_concatenated_ticker_windows"
+
+
+def _seconds_since(start_time: float) -> float:
+    return round(time.perf_counter() - start_time, 6)
+
+
+def _skipped_status(reason: str) -> dict:
+    return {
+        "included": False,
+        "status": "skipped",
+        "skip_reason": reason,
+    }
+
+
+def _included_status() -> dict:
+    return {
+        "included": True,
+        "status": "included",
+        "skip_reason": None,
+    }
+
+
+def skipped_lightgbm_adapter_result(reason: str) -> dict:
+    return {
+        "adapter": "lightgbm",
+        "available": None,
+        "skipped": True,
+        "skip_reason": reason,
+        "blocker": "skipped_by_request",
+        "scope": "validation_only_tiny_adapter_diagnostic_not_selection",
+        "model": None,
+        "feature_view": "last_step_only_not_sequence",
+        "uses_full_window_sequence": False,
+        "ticker_or_pooled": "pooled",
+        "train_n": None,
+        "validation_n": None,
+        "train_row_subsample_strategy": ROW_SUBSAMPLE_STRATEGY,
+        "macro_f1": None,
+        "balanced_accuracy": None,
+        "accuracy": None,
+    }
 
 
 def find_timestamp_column(columns) -> str:
@@ -150,6 +192,29 @@ def summarize_window_class_balance(windows_by_ticker: dict[str, dict]) -> list[d
                 }
             )
     return rows
+
+
+def cap_frames_for_window_diagnostic(
+    split_frames_by_ticker: dict[str, pd.DataFrame],
+    *,
+    max_rows_per_ticker_split: int | None,
+    split_names=("train", "validation"),
+) -> dict[str, pd.DataFrame]:
+    if max_rows_per_ticker_split is None:
+        return split_frames_by_ticker
+    max_rows_per_ticker_split = int(max_rows_per_ticker_split)
+    if max_rows_per_ticker_split <= 0:
+        raise ValueError("max_rows_per_ticker_split must be positive when provided.")
+
+    capped = {}
+    split_names = tuple(split_names)
+    for ticker, frame in split_frames_by_ticker.items():
+        parts = []
+        for split_name in split_names:
+            part = frame.loc[frame["split"] == split_name].sort_values("timestamp")
+            parts.append(part.head(max_rows_per_ticker_split))
+        capped[ticker] = pd.concat(parts, ignore_index=True)
+    return capped
 
 
 def pooled_train_validation_labels(windows_by_ticker: dict[str, dict]) -> tuple[np.ndarray, np.ndarray]:
@@ -405,12 +470,16 @@ def precheck_lightgbm_dependency() -> dict:
         return {
             "adapter": "lightgbm",
             "available": False,
+            "skipped": False,
+            "skip_reason": None,
             "blocker": "Missing Python dependency: lightgbm",
             "scope": "validation_only_adapter_precheck",
         }
     return {
         "adapter": "lightgbm",
         "available": True,
+        "skipped": False,
+        "skip_reason": None,
         "blocker": None,
         "scope": "validation_only_adapter_precheck",
     }
@@ -426,6 +495,8 @@ def evaluate_lightgbm_last_step_adapter(
         return {
             **dependency,
             "model": None,
+            "skipped": False,
+            "skip_reason": None,
             "feature_view": "last_step_only_not_sequence",
             "uses_full_window_sequence": False,
             "ticker_or_pooled": "pooled",
@@ -456,6 +527,8 @@ def evaluate_lightgbm_last_step_adapter(
         {
             "adapter": "lightgbm",
             "available": True,
+            "skipped": False,
+            "skip_reason": None,
             "blocker": None,
             "model": "lightgbm_lgbmclassifier_last_step_tiny",
             "feature_view": "last_step_only_not_sequence",
@@ -540,43 +613,159 @@ def build_validation_only_report(
     dummy_seeds=(41, 42, 43, 44, 45),
     diagnostic_max_train_rows: int = DEFAULT_DIAGNOSTIC_TRAIN_CAP,
     walk_forward_folds: int = 3,
+    include_mutual_information: bool = True,
+    include_feature_ablation: bool = True,
+    include_lightgbm: bool = True,
+    window_max_rows_per_ticker_split: int | None = None,
 ) -> dict:
-    raw_frames = {
-        ticker: load_ticker_csv(ticker, data_dir=data_dir) for ticker in tickers
-    }
-    split_frames = prepare_split_frames(
-        raw_frames,
-        splits=splits,
-        horizon_k=horizon_k,
-        threshold_bps=threshold_bps,
+    stage_timings_seconds = {}
+
+    def timed_stage(name, callback):
+        stage_start = time.perf_counter()
+        result = callback()
+        stage_timings_seconds[name] = _seconds_since(stage_start)
+        return result
+
+    report_start = time.perf_counter()
+    raw_frames = timed_stage(
+        "load_raw_frames",
+        lambda: {
+            ticker: load_ticker_csv(ticker, data_dir=data_dir) for ticker in tickers
+        },
     )
-    scaler = fit_train_only_scaler(split_frames, feature_columns=feature_columns)
-    scaled_frames = transform_train_and_validation(
-        split_frames,
-        scaler,
-        feature_columns=feature_columns,
+    split_frames = timed_stage(
+        "prepare_split_frames",
+        lambda: prepare_split_frames(
+            raw_frames,
+            splits=splits,
+            horizon_k=horizon_k,
+            threshold_bps=threshold_bps,
+        ),
     )
-    windows = build_windows_by_ticker_and_split(
-        scaled_frames,
-        feature_columns=feature_columns,
-        window_size=window_size,
-        split_names=("train", "validation"),
+    scaler = timed_stage(
+        "fit_train_only_scaler",
+        lambda: fit_train_only_scaler(split_frames, feature_columns=feature_columns),
     )
-    y_train, y_validation = pooled_train_validation_labels(windows)
-    dummy_rows = evaluate_stratified_dummy(
-        y_train,
-        y_validation,
-        seeds=dummy_seeds,
+    scaled_frames = timed_stage(
+        "transform_train_and_validation",
+        lambda: transform_train_and_validation(
+            split_frames,
+            scaler,
+            feature_columns=feature_columns,
+        ),
+    )
+    window_input_frames = timed_stage(
+        "cap_window_diagnostic_input",
+        lambda: cap_frames_for_window_diagnostic(
+            scaled_frames,
+            max_rows_per_ticker_split=window_max_rows_per_ticker_split,
+        ),
+    )
+    windows = timed_stage(
+        "build_train_validation_windows",
+        lambda: build_windows_by_ticker_and_split(
+            window_input_frames,
+            feature_columns=feature_columns,
+            window_size=window_size,
+            split_names=("train", "validation"),
+        ),
+    )
+    y_train, y_validation = timed_stage(
+        "pool_train_validation_labels",
+        lambda: pooled_train_validation_labels(windows),
+    )
+    dummy_rows = timed_stage(
+        "evaluate_stratified_dummy",
+        lambda: evaluate_stratified_dummy(
+            y_train,
+            y_validation,
+            seeds=dummy_seeds,
+        ),
     )
     dummy_summary = summarize_dummy_baseline(dummy_rows)
-    logreg_diagnostic = evaluate_sklearn_logreg_last_step(
-        windows,
-        max_train_rows=diagnostic_max_train_rows,
+    logreg_diagnostic = timed_stage(
+        "evaluate_sklearn_logreg_last_step",
+        lambda: evaluate_sklearn_logreg_last_step(
+            windows,
+            max_train_rows=diagnostic_max_train_rows,
+        ),
     )
     logreg_diagnostic["dummy_macro_f1"] = dummy_summary["macro_f1_mean"]
     logreg_diagnostic["delta_macro_f1_vs_dummy"] = (
         logreg_diagnostic["macro_f1"] - dummy_summary["macro_f1_mean"]
     )
+
+    feature_signal = timed_stage(
+        "summarize_last_step_feature_signal",
+        lambda: summarize_feature_signal(
+            windows,
+            feature_columns,
+        ),
+    )
+    if include_mutual_information:
+        mutual_information = timed_stage(
+            "mutual_information_diagnostic",
+            lambda: compute_mutual_information_diagnostic(
+                windows,
+                feature_columns,
+                max_rows=diagnostic_max_train_rows,
+            ),
+        )
+        mutual_information_status = _included_status()
+    else:
+        mutual_information = []
+        mutual_information_status = _skipped_status(
+            "disabled_by_skip_mutual_information"
+        )
+
+    if include_lightgbm:
+        lightgbm_precheck = timed_stage(
+            "precheck_lightgbm_dependency",
+            precheck_lightgbm_dependency,
+        )
+        lightgbm_result = timed_stage(
+            "lightgbm_tiny_adapter_result",
+            lambda: evaluate_lightgbm_last_step_adapter(
+                windows,
+                max_train_rows=diagnostic_max_train_rows,
+            ),
+        )
+        lightgbm_status = _included_status()
+    else:
+        reason = "disabled_by_skip_lightgbm"
+        lightgbm_precheck = {
+            "adapter": "lightgbm",
+            "available": None,
+            "skipped": True,
+            "skip_reason": reason,
+            "blocker": "skipped_by_request",
+            "scope": "validation_only_adapter_precheck",
+        }
+        lightgbm_result = skipped_lightgbm_adapter_result(reason)
+        lightgbm_status = _skipped_status(reason)
+
+    if include_feature_ablation:
+        feature_ablation = timed_stage(
+            "feature_ablation_diagnostic",
+            lambda: run_feature_ablation_diagnostic(
+                windows,
+                feature_columns,
+                max_train_rows=diagnostic_max_train_rows,
+            ),
+        )
+        feature_ablation_status = _included_status()
+    else:
+        feature_ablation = []
+        feature_ablation_status = _skipped_status("disabled_by_skip_feature_ablation")
+
+    walk_forward_contract = timed_stage(
+        "build_walk_forward_contract",
+        lambda: build_walk_forward_fold_specs(
+            split_frames,
+            n_folds=walk_forward_folds,
+        ),
+    )
+    stage_timings_seconds["total_report_build"] = _seconds_since(report_start)
 
     return {
         "metadata": {
@@ -600,6 +789,26 @@ def build_validation_only_report(
                     "feature_ablation_diagnostic",
                 ],
             },
+            "window_diagnostic_input": {
+                "split_names": ["train", "validation"],
+                "max_rows_per_ticker_split": (
+                    None
+                    if window_max_rows_per_ticker_split is None
+                    else int(window_max_rows_per_ticker_split)
+                ),
+                "cap_strategy": (
+                    "none_full_train_validation_rows"
+                    if window_max_rows_per_ticker_split is None
+                    else "chronological_head_within_each_ticker_split_for_smoke_runtime"
+                ),
+                "scope": "validation_only_window_runtime_diagnostic_not_full_window_evidence",
+            },
+            "extended_diagnostics": {
+                "mutual_information_diagnostic": mutual_information_status,
+                "feature_ablation_diagnostic": feature_ablation_status,
+                "lightgbm_tiny_adapter": lightgbm_status,
+            },
+            "stage_timings_seconds": stage_timings_seconds,
             "diagnostic_model_views": {
                 "sklearn_logreg_last_step": {
                     "feature_view": "last_step_only_not_sequence",
@@ -622,30 +831,13 @@ def build_validation_only_report(
         "window_class_balance": summarize_window_class_balance(windows),
         "dummy_baseline_by_seed": dummy_rows.to_dict(orient="records"),
         "dummy_baseline_summary": dummy_summary,
-        "last_step_feature_signal_diagnostic": summarize_feature_signal(
-            windows,
-            feature_columns,
-        ),
-        "mutual_information_diagnostic": compute_mutual_information_diagnostic(
-            windows,
-            feature_columns,
-            max_rows=diagnostic_max_train_rows,
-        ),
+        "last_step_feature_signal_diagnostic": feature_signal,
+        "mutual_information_diagnostic": mutual_information,
         "model_adapter_precheck": {
-            "lightgbm": precheck_lightgbm_dependency(),
+            "lightgbm": lightgbm_precheck,
             "dependency_free_diagnostic": logreg_diagnostic,
         },
-        "lightgbm_tiny_adapter_result": evaluate_lightgbm_last_step_adapter(
-            windows,
-            max_train_rows=diagnostic_max_train_rows,
-        ),
-        "feature_ablation_diagnostic": run_feature_ablation_diagnostic(
-            windows,
-            feature_columns,
-            max_train_rows=diagnostic_max_train_rows,
-        ),
-        "walk_forward_contract": build_walk_forward_fold_specs(
-            split_frames,
-            n_folds=walk_forward_folds,
-        ),
+        "lightgbm_tiny_adapter_result": lightgbm_result,
+        "feature_ablation_diagnostic": feature_ablation,
+        "walk_forward_contract": walk_forward_contract,
     }

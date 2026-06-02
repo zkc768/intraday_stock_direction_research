@@ -9,6 +9,7 @@ from sklearn.exceptions import ConvergenceWarning
 from intraday_research.validation_pipeline import (
     build_walk_forward_fold_specs,
     build_validation_only_report,
+    cap_frames_for_window_diagnostic,
     evaluate_lightgbm_last_step_adapter,
     evaluate_sklearn_logreg_last_step,
     load_ticker_csv,
@@ -17,6 +18,7 @@ from intraday_research.validation_pipeline import (
     subsample_rows_uniformly,
 )
 from scripts.run_validation_only_pipeline_smoke import json_default
+from scripts.run_validation_only_pipeline_smoke import parse_args
 
 
 def make_daily_rows(ticker, start_date, n_days, bars_per_day=14):
@@ -67,6 +69,50 @@ def test_json_default_preserves_numpy_bool_as_json_bool():
     assert json_default(np.bool_(False)) is False
 
 
+def test_smoke_cli_parses_boundary_skip_flags():
+    args = parse_args(
+        [
+            "--tickers",
+            "AAA",
+            "BBB",
+            "--skip-mutual-information",
+            "--skip-feature-ablation",
+            "--skip-lightgbm",
+            "--window-max-rows-per-ticker-split",
+            "123",
+        ]
+    )
+
+    assert args.tickers == ["AAA", "BBB"]
+    assert args.skip_mutual_information
+    assert args.skip_feature_ablation
+    assert args.skip_lightgbm
+    assert args.window_max_rows_per_ticker_split == 123
+
+
+def test_smoke_cli_zero_window_cap_disables_row_cap():
+    args = parse_args(["--window-max-rows-per-ticker-split", "0"])
+
+    assert args.window_max_rows_per_ticker_split is None
+
+
+def test_window_diagnostic_input_cap_keeps_chronological_head_by_split():
+    frame = pd.DataFrame(
+        {
+            "timestamp": pd.date_range("2020-01-01", periods=8, freq="5min"),
+            "split": ["train"] * 4 + ["validation"] * 4,
+            "value": list(range(8)),
+        }
+    )
+
+    capped = cap_frames_for_window_diagnostic(
+        {"AAA": frame},
+        max_rows_per_ticker_split=2,
+    )
+
+    assert capped["AAA"]["value"].tolist() == [0, 1, 4, 5]
+
+
 def test_validation_only_report_uses_train_validation_without_holdout_windows(tmp_path):
     data_dir = tmp_path / "data"
     data_dir.mkdir()
@@ -107,6 +153,15 @@ def test_validation_only_report_uses_train_validation_without_holdout_windows(tm
     assert metadata["transformed_splits"] == ["train", "validation"]
     assert metadata["diagnostic_row_subsample"]["strategy"].startswith("uniform_index")
     assert "not_transformed_not_windowed_not_scored" in metadata["closed_holdout_policy"]
+    assert metadata["extended_diagnostics"]["mutual_information_diagnostic"][
+        "status"
+    ] == "included"
+    assert metadata["extended_diagnostics"]["feature_ablation_diagnostic"][
+        "status"
+    ] == "included"
+    assert metadata["extended_diagnostics"]["lightgbm_tiny_adapter"]["status"] == "included"
+    assert "stage_timings_seconds" in metadata
+    assert metadata["stage_timings_seconds"]["build_train_validation_windows"] >= 0.0
 
     balance = report["window_class_balance"]
     assert {row["split"] for row in balance} == {"train", "validation"}
@@ -151,6 +206,102 @@ def test_validation_only_report_uses_train_validation_without_holdout_windows(tm
     assert all(
         row["scope"] == "train_validation_only_walk_forward_contract_no_scores"
         for row in walk_forward
+    )
+
+
+def test_validation_only_report_can_skip_extended_diagnostics(tmp_path):
+    data_dir = tmp_path / "data"
+    data_dir.mkdir()
+    frame = pd.concat(
+        [
+            make_daily_rows("AAA", "2020-01-01", 3),
+            make_daily_rows("AAA", "2020-01-10", 3),
+            make_daily_rows("AAA", "2020-01-20", 1),
+        ],
+        ignore_index=True,
+    )
+    write_ticker_csv(data_dir / "AAA.csv", frame)
+
+    report = build_validation_only_report(
+        data_dir=data_dir,
+        tickers=("AAA",),
+        feature_columns=(
+            "log_return",
+            "close_to_open_return",
+            "high_low_range",
+            "time_of_day_sin",
+            "time_of_day_cos",
+        ),
+        splits={
+            "train": ("2020-01-01", "2020-01-10"),
+            "validation": ("2020-01-10", "2020-01-20"),
+            "closed_holdout_boundary_only": ("2020-01-20", "2020-01-21"),
+        },
+        horizon_k=2,
+        threshold_bps=0.0,
+        window_size=3,
+        dummy_seeds=(41, 42),
+        walk_forward_folds=2,
+        include_mutual_information=False,
+        include_feature_ablation=False,
+        include_lightgbm=False,
+        window_max_rows_per_ticker_split=20,
+    )
+
+    metadata = report["metadata"]
+    assert metadata["transformed_splits"] == ["train", "validation"]
+    assert metadata["window_diagnostic_input"] == {
+        "split_names": ["train", "validation"],
+        "max_rows_per_ticker_split": 20,
+        "cap_strategy": "chronological_head_within_each_ticker_split_for_smoke_runtime",
+        "scope": "validation_only_window_runtime_diagnostic_not_full_window_evidence",
+    }
+    assert (
+        metadata["closed_holdout_policy"]
+        == "boundary_invalidation_only_not_transformed_not_windowed_not_scored"
+    )
+    assert (
+        metadata["diagnostic_model_views"]["sklearn_logreg_last_step"][
+            "feature_view"
+        ]
+        == "last_step_only_not_sequence"
+    )
+    assert (
+        metadata["walk_forward_contract_policy"]
+        == "date_range_contract_only_no_model_scores"
+    )
+    assert metadata["extended_diagnostics"]["mutual_information_diagnostic"] == {
+        "included": False,
+        "status": "skipped",
+        "skip_reason": "disabled_by_skip_mutual_information",
+    }
+    assert metadata["extended_diagnostics"]["feature_ablation_diagnostic"] == {
+        "included": False,
+        "status": "skipped",
+        "skip_reason": "disabled_by_skip_feature_ablation",
+    }
+    assert metadata["extended_diagnostics"]["lightgbm_tiny_adapter"] == {
+        "included": False,
+        "status": "skipped",
+        "skip_reason": "disabled_by_skip_lightgbm",
+    }
+    assert report["mutual_information_diagnostic"] == []
+    assert report["feature_ablation_diagnostic"] == []
+    assert report["model_adapter_precheck"]["lightgbm"]["skipped"]
+    assert report["lightgbm_tiny_adapter_result"]["skipped"]
+    assert report["lightgbm_tiny_adapter_result"]["macro_f1"] is None
+    assert (
+        report["model_adapter_precheck"]["dependency_free_diagnostic"][
+            "feature_view"
+        ]
+        == "last_step_only_not_sequence"
+    )
+    assert report["model_adapter_precheck"]["dependency_free_diagnostic"][
+        "class_weight"
+    ] == "balanced"
+    assert all(row["contract_only"] for row in report["walk_forward_contract"])
+    assert all(
+        not row["model_scores_available"] for row in report["walk_forward_contract"]
     )
 
 

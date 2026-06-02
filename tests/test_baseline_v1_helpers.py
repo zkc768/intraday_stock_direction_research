@@ -37,7 +37,7 @@ def make_one_ticker_frame():
             "open": [100, 101, 102, 103, 110, 111, 112, 113],
             "high": [101, 102, 103, 104, 111, 112, 113, 114],
             "low": [99, 100, 101, 102, 109, 110, 111, 112],
-            "close": [100, 101, 103, 102, 110, 111, 109, 112],
+            "close": [100, 101, 103, 102, 110, 111, 112, 112],
             "volume": [1000, 1100, 1200, 1300, 1000, 1100, 1200, 1300],
         }
     )
@@ -255,45 +255,46 @@ def test_feature_construction_time_encoding_does_not_wrap_close_to_open():
 
 
 def test_feature_construction_rsi_uses_wilder_alpha():
+    close_values = [
+        100.0,
+        101.0,
+        100.5,
+        102.0,
+        101.2,
+        102.5,
+        103.0,
+        102.6,
+        103.4,
+        104.0,
+        103.6,
+        104.2,
+        104.8,
+        104.1,
+        105.0,
+        105.4,
+        104.9,
+        105.6,
+        106.0,
+        105.5,
+        106.4,
+        106.8,
+        106.2,
+        107.0,
+        107.5,
+        107.1,
+        107.9,
+        108.2,
+        107.7,
+        108.5,
+    ]
     frame = pd.DataFrame(
         {
             "ticker": ["AAA"] * 30,
             "timestamp": pd.date_range("2020-01-01 09:30", periods=30, freq="5min"),
-            "open": np.linspace(100.0, 104.0, 30),
-            "high": np.linspace(100.5, 104.5, 30),
-            "low": np.linspace(99.5, 103.5, 30),
-            "close": [
-                100.0,
-                101.0,
-                100.5,
-                102.0,
-                101.2,
-                102.5,
-                103.0,
-                102.6,
-                103.4,
-                104.0,
-                103.6,
-                104.2,
-                104.8,
-                104.1,
-                105.0,
-                105.4,
-                104.9,
-                105.6,
-                106.0,
-                105.5,
-                106.4,
-                106.8,
-                106.2,
-                107.0,
-                107.5,
-                107.1,
-                107.9,
-                108.2,
-                107.7,
-                108.5,
-            ],
+            "open": close_values,
+            "high": [value + 0.5 for value in close_values],
+            "low": [value - 0.5 for value in close_values],
+            "close": close_values,
             "volume": np.arange(100, 130),
         }
     )
@@ -312,6 +313,47 @@ def test_feature_construction_rsi_uses_wilder_alpha():
     assert featured.loc[valid, "rsi_14"].tolist() == pytest.approx(
         expected.loc[valid].tolist()
     )
+
+
+def test_feature_construction_macd_ema_is_continuous_per_ticker_across_days():
+    day_one = pd.date_range("2020-01-01 09:30", periods=45, freq="5min")
+    day_two = pd.date_range("2020-01-02 09:30", periods=5, freq="5min")
+    close = np.linspace(100.0, 105.0, len(day_one) + len(day_two))
+    frame = pd.DataFrame(
+        {
+            "ticker": ["AAA"] * len(close),
+            "timestamp": list(day_one) + list(day_two),
+            "open": close - 0.05,
+            "high": close + 0.10,
+            "low": close - 0.10,
+            "close": close,
+            "volume": np.arange(1000, 1000 + len(close)),
+        }
+    )
+
+    featured = add_baseline_v1_features(frame)
+
+    assert pd.notna(featured.loc[45, "normalized_macd_hist"])
+
+
+@pytest.mark.parametrize(
+    ("column", "value", "message"),
+    [
+        ("high", 98.0, "high must be >= low"),
+        ("open", 98.0, "open must be within high-low range"),
+        ("close", 102.0, "close must be within high-low range"),
+        ("low", 0.0, "price columns must be positive"),
+        ("volume", -1.0, "volume must be non-negative"),
+    ],
+)
+def test_feature_construction_rejects_invalid_raw_ohlcv_contract(
+    column, value, message
+):
+    frame = make_one_ticker_frame()
+    frame.loc[0, column] = value
+
+    with pytest.raises(ValueError, match=message):
+        add_baseline_v1_features(frame)
 
 
 def test_feature_construction_marks_zero_bollinger_width_invalid():

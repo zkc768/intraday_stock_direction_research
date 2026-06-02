@@ -46,6 +46,42 @@ def _finite_rows(frame: pd.DataFrame, columns) -> pd.Series:
     return pd.Series(np.isfinite(values).all(axis=1), index=frame.index)
 
 
+def _validated_ohlcv(frame: pd.DataFrame) -> dict[str, pd.Series]:
+    required = ["open", "high", "low", "close", "volume"]
+    missing = [column for column in required if column not in frame.columns]
+    if missing:
+        raise ValueError(f"Missing raw OHLCV columns: {missing}")
+    try:
+        values = {column: frame[column].astype(float) for column in required}
+    except (TypeError, ValueError) as exc:
+        raise ValueError("Raw OHLCV columns must be numeric.") from exc
+
+    price_columns = ["open", "high", "low", "close"]
+    price_matrix = frame.loc[:, price_columns].to_numpy(dtype=float)
+    if not np.isfinite(price_matrix).all():
+        raise ValueError("Raw OHLC price columns must be finite.")
+    if (price_matrix <= 0.0).any():
+        raise ValueError("Raw OHLC price columns must be positive.")
+
+    volume = values["volume"]
+    if not np.isfinite(volume.to_numpy(dtype=float)).all():
+        raise ValueError("Raw volume must be finite.")
+    if (volume < 0.0).any():
+        raise ValueError("Raw volume must be non-negative.")
+
+    high = values["high"]
+    low = values["low"]
+    open_ = values["open"]
+    close = values["close"]
+    if (high < low).any():
+        raise ValueError("Raw OHLC sanity failed: high must be >= low.")
+    if ((open_ < low) | (open_ > high)).any():
+        raise ValueError("Raw OHLC sanity failed: open must be within high-low range.")
+    if ((close < low) | (close > high)).any():
+        raise ValueError("Raw OHLC sanity failed: close must be within high-low range.")
+    return values
+
+
 def grouped_shift(series, group_key, periods=1):
     return series.groupby(group_key, group_keys=False).shift(periods)
 
@@ -64,6 +100,11 @@ def grouped_ewm(series, group_key, span):
     )
 
 
+def continuous_ewm(series, span):
+    span = _positive_int(span, "span")
+    return series.ewm(span=span, adjust=False, min_periods=span).mean()
+
+
 def grouped_wilder_ewm(series, group_key, period):
     period = _positive_int(period, "period")
     return series.groupby(group_key, group_keys=False).apply(
@@ -79,11 +120,12 @@ def add_baseline_v1_features(frame):
     _require_single_ticker_frame(frame)
     current = frame.sort_values("timestamp").copy()
     day = current["timestamp"].dt.date
-    close = current["close"].astype(float)
-    open_ = current["open"].astype(float)
-    high = current["high"].astype(float)
-    low = current["low"].astype(float)
-    volume = current["volume"].astype(float)
+    ohlcv = _validated_ohlcv(current)
+    close = ohlcv["close"]
+    open_ = ohlcv["open"]
+    high = ohlcv["high"]
+    low = ohlcv["low"]
+    volume = ohlcv["volume"]
 
     log_close = np.log(close)
     current["log_return"] = log_close.groupby(day, group_keys=False).diff()
@@ -115,10 +157,10 @@ def add_baseline_v1_features(frame):
     bollinger_denom = (upper_band - lower_band).replace(0.0, np.nan)
     current["bollinger_pctb"] = (close - lower_band) / bollinger_denom
 
-    ema_12 = grouped_ewm(close, day, 12)
-    ema_26 = grouped_ewm(close, day, 26)
+    ema_12 = continuous_ewm(close, 12)
+    ema_26 = continuous_ewm(close, 26)
     macd = ema_12 - ema_26
-    signal = grouped_ewm(macd, day, 9)
+    signal = continuous_ewm(macd, 9)
     current["normalized_macd_hist"] = (macd - signal) / ema_26.replace(0.0, np.nan)
 
     minute_of_day = current["timestamp"].dt.hour * 60 + current["timestamp"].dt.minute

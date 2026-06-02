@@ -24,7 +24,7 @@
 - **Research question**: Can 5-minute bar data support an honest directional
   classifier that beats simple baselines under chronological validation?
 - **Current scope**: 5 stocks first, then possible expansion after the baseline
-  protocol is trustworthy.
+  setup is trustworthy.
 - **Working style**: one research question at a time; one readable notebook per
   experiment; no extra process documents unless the user asks.
 - **Role of the archived helper library**: historical reference only. Do not import it
@@ -144,7 +144,7 @@ The current reproducible baseline is:
 
 | Item | Default |
 |---|---|
-| Feature set | `ian_baseline_v1`: log_return, close_to_open_return, high_low_range, rolling_volatility_20, normalized_volume_20, rsi_14, bollinger_pctb, normalized_macd_hist, time_of_day_sin/cos |
+| Feature set | `baseline_v1`: log_return, close_to_open_return, high_low_range, rolling_volatility_20, normalized_volume_20, rsi_14, bollinger_pctb, normalized_macd_hist, time_of_day_sin/cos |
 | Label | no-trade band, threshold = 5 bps, horizon k = 12 |
 | Window | window_size = 12, decision after current bar close |
 | Split | calendar train/validation/holdout intervals already used in prior route work |

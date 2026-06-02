@@ -6,7 +6,7 @@ import torch
 
 
 def test_same_seed_reproducibility():
-    from ml_utils.seed import seed_everything
+    from runner_utils.seed import seed_everything
 
     seed_everything(123)
     first_random = random.random()
@@ -24,7 +24,7 @@ def test_same_seed_reproducibility():
 
 
 def test_different_seed_changes_torch_sequence():
-    from ml_utils.seed import seed_everything
+    from runner_utils.seed import seed_everything
 
     seed_everything(123)
     first = torch.randn(5)
@@ -36,7 +36,7 @@ def test_different_seed_changes_torch_sequence():
 
 
 def test_pythonhashseed_is_set():
-    from ml_utils.seed import seed_everything
+    from runner_utils.seed import seed_everything
 
     seed_everything(789)
 
@@ -51,7 +51,7 @@ def test_deterministic_true_sets_deterministic_flags():
     )
 
     try:
-        from ml_utils.seed import seed_everything
+        from runner_utils.seed import seed_everything
 
         seed_everything(123, deterministic=True)
 
@@ -68,6 +68,6 @@ def test_deterministic_true_sets_deterministic_flags():
 
 
 def test_seed_everything_returns_none():
-    from ml_utils.seed import seed_everything
+    from runner_utils.seed import seed_everything
 
     assert seed_everything(123) is None

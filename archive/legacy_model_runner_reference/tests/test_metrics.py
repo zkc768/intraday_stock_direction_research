@@ -14,7 +14,7 @@ METRIC_KEYS = {
 
 
 def _metrics_module():
-    import ml_utils.metrics as metrics
+    import runner_utils.metrics as metrics
 
     return metrics
 

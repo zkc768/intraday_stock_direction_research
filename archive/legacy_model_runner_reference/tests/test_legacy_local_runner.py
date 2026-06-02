@@ -6,7 +6,7 @@ import pandas as pd
 import pytest
 import torch
 
-from scripts.phase1b_local import local_baseline_matrix as runner
+from scripts.local_runner_reference import local_baseline_matrix as runner
 
 
 def _args(label_mode, threshold_bps=None):
@@ -110,9 +110,9 @@ def test_no_trade_band_default_threshold_remains_five_bps():
     assert runner.resolve_threshold_bps(_args("no_trade_band"), "no_trade_band") == 5.0
 
 
-def test_protocol_metadata_locks_mentor_clean_fixed_5bps_route():
+def test_protocol_metadata_locks_ian_baseline_fixed_5bps_route():
     metadata = runner.protocol_metadata_fields(
-        "mentor_clean_v1",
+        "ian_baseline_v1",
         "no_trade_band",
         threshold_bps=5.0,
         cli_threshold_bps=5.0,
@@ -128,7 +128,7 @@ def test_protocol_metadata_locks_mentor_clean_fixed_5bps_route():
 
 def test_protocol_metadata_marks_default_no_trade_threshold_separately():
     metadata = runner.protocol_metadata_fields(
-        "mentor_clean_v1",
+        "ian_baseline_v1",
         "no_trade_band",
         threshold_bps=5.0,
         cli_threshold_bps=None,
@@ -496,17 +496,17 @@ def test_technical_v1_feature_construction_still_uses_technical_columns():
     assert np.isfinite(feature_df.loc[:, runner.TECHNICAL_FEATURES].to_numpy()).all()
 
 
-def test_default_feature_set_resolves_to_mentor_clean_v1():
+def test_default_feature_set_resolves_to_ian_baseline_v1():
     args = Namespace(feature_set=None)
 
-    assert runner.resolve_feature_set(args, "smoke") == "mentor_clean_v1"
-    assert runner.resolve_feature_set(args, "full") == "mentor_clean_v1"
+    assert runner.resolve_feature_set(args, "smoke") == "ian_baseline_v1"
+    assert runner.resolve_feature_set(args, "full") == "ian_baseline_v1"
 
 
-def test_mentor_clean_v1_feature_set_excludes_raw_price_volume_and_raw_macd():
+def test_ian_baseline_v1_feature_set_excludes_raw_price_volume_and_raw_macd():
     df = _technical_raw_frame(rows=80)
 
-    feature_df = runner.add_feature_set(df, "mentor_clean_v1")
+    feature_df = runner.add_feature_set(df, "ian_baseline_v1")
 
     expected_features = {
         "log_return",
@@ -530,17 +530,17 @@ def test_mentor_clean_v1_feature_set_excludes_raw_price_volume_and_raw_macd():
         "macd_signal",
         "macd_hist",
     }
-    assert tuple(runner.FEATURE_SETS["mentor_clean_v1"]) == runner.MENTOR_CLEAN_V1_FEATURES
-    assert set(runner.MENTOR_CLEAN_V1_FEATURES) == expected_features
-    assert set(runner.MENTOR_CLEAN_V1_FEATURES).isdisjoint(forbidden_features)
+    assert tuple(runner.FEATURE_SETS["ian_baseline_v1"]) == runner.IAN_BASELINE_V1_FEATURES
+    assert set(runner.IAN_BASELINE_V1_FEATURES) == expected_features
+    assert set(runner.IAN_BASELINE_V1_FEATURES).isdisjoint(forbidden_features)
     assert expected_features.issubset(feature_df.columns)
-    assert np.isfinite(feature_df.loc[:, runner.MENTOR_CLEAN_V1_FEATURES].to_numpy()).all()
+    assert np.isfinite(feature_df.loc[:, runner.IAN_BASELINE_V1_FEATURES].to_numpy()).all()
 
 
-def test_mentor_clean_v1_exact_values_for_hand_checked_row():
+def test_ian_baseline_v1_exact_values_for_hand_checked_row():
     df = _technical_raw_frame(rows=80)
 
-    feature_df = runner.add_feature_set(df, "mentor_clean_v1")
+    feature_df = runner.add_feature_set(df, "ian_baseline_v1")
 
     timestamp = pd.Timestamp("2024-01-02 12:50")
     row = feature_df.loc[feature_df["timestamp"].eq(timestamp)].iloc[0]
@@ -592,10 +592,10 @@ def test_mentor_clean_v1_exact_values_for_hand_checked_row():
         assert row[feature_name] == pytest.approx(expected_value)
 
 
-def test_mentor_clean_v1_resets_lagged_features_at_trading_day_boundary():
+def test_ian_baseline_v1_resets_lagged_features_at_trading_day_boundary():
     df = _stationary_raw_frame(days=2, bars_per_day=60)
 
-    feature_df = runner.add_feature_set(df, "mentor_clean_v1")
+    feature_df = runner.add_feature_set(df, "ian_baseline_v1")
 
     second_day = pd.Timestamp("2024-01-03").date()
     second_day_features = feature_df.loc[feature_df["timestamp"].dt.date.eq(second_day)]
@@ -1084,7 +1084,7 @@ def test_sklearn_validation_only_cli_marks_metadata_and_result_scope(
             "--sklearn-baseline",
             "--validation-only-report",
             "--feature-set",
-            "mentor_clean_v1",
+            "ian_baseline_v1",
             "--label-mode",
             "no_trade_band",
             "--threshold-bps",
@@ -1112,7 +1112,7 @@ def test_sklearn_validation_only_cli_marks_metadata_and_result_scope(
     }
     metadata_path = next((tmp_path / "out").rglob("metadata.json"))
     metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
-    assert metadata["feature_set_id"] == "mentor_clean_v1"
+    assert metadata["feature_set_id"] == "ian_baseline_v1"
     assert metadata["label_mode"] == "no_trade_band"
     assert metadata["threshold_bps"] == 5.0
     assert metadata["report_scope"] == "validation_only"
@@ -1174,7 +1174,7 @@ def test_lightgbm_validation_only_main_skips_test_data_materialization(
             "lightgbm",
             "--validation-only-report",
             "--feature-set",
-            "mentor_clean_v1",
+            "ian_baseline_v1",
             "--label-mode",
             "no_trade_band",
             "--threshold-bps",
@@ -1211,8 +1211,8 @@ def test_prepare_data_validation_only_does_not_call_three_way_time_split(
     prepared = runner.prepare_data(
         data_dir=data_dir,
         tickers=["AAA"],
-        feature_set_id="mentor_clean_v1",
-        feature_cols=list(runner.MENTOR_CLEAN_V1_FEATURES),
+        feature_set_id="ian_baseline_v1",
+        feature_cols=list(runner.IAN_BASELINE_V1_FEATURES),
         candidate=_no_trade_candidate(),
         max_rows_per_ticker=None,
         calendar_split=None,
@@ -1264,7 +1264,7 @@ def test_validation_only_manifest_omits_holdout_and_test_exposure(
             "--sklearn-baseline",
             "--validation-only-report",
             "--feature-set",
-            "mentor_clean_v1",
+            "ian_baseline_v1",
             "--label-mode",
             "no_trade_band",
             "--threshold-bps",
@@ -1372,10 +1372,10 @@ def test_torch_validation_only_ms_dlinear_tcn_cli_uses_safe_branch(
     assert observed["model_name"] == "ms_dlinear_tcn"
     assert observed["candidate"].label_mode == "no_trade_band"
     assert observed["candidate"].threshold_bps == 5.0
-    assert observed["feature_cols"] == list(runner.FEATURE_SETS["mentor_clean_v1"])
+    assert observed["feature_cols"] == list(runner.FEATURE_SETS["ian_baseline_v1"])
     assert observed["metadata"]["models"] == ["ms_dlinear_tcn"]
     assert observed["metadata"]["model_family"] == "torch"
-    _assert_mentor_clean_validation_only_metadata(observed["metadata"])
+    _assert_ian_baseline_validation_only_metadata(observed["metadata"])
     results = pd.read_csv(next((tmp_path / "out").rglob("results.csv")))
     assert set(results["ticker"]) == {"pooled", "AAA"}
     assert set(results["split"]) == {"validation"}
@@ -1392,7 +1392,7 @@ def test_torch_validation_only_ms_dlinear_tcn_cli_uses_safe_branch(
 @pytest.mark.parametrize(
     ("route_overrides", "expected_message"),
     [
-        ({"feature_set": "ohlcv_only_v1"}, "mentor_clean_v1"),
+        ({"feature_set": "ohlcv_only_v1"}, "ian_baseline_v1"),
         ({"label_mode": "legacy_binary"}, "no_trade_band"),
         ({"threshold_bps": None}, "threshold-bps 5.0"),
         ({"threshold_bps": "1.0"}, "threshold-bps 5.0"),
@@ -1496,7 +1496,7 @@ def test_lightgbm_rejects_full_run_before_prepare_data(monkeypatch):
             "--validation-only-report",
             "--full-run",
             "--feature-set",
-            "mentor_clean_v1",
+            "ian_baseline_v1",
             "--label-mode",
             "no_trade_band",
             "--threshold-bps",
@@ -1520,12 +1520,12 @@ def test_lightgbm_rejects_full_run_before_prepare_data(monkeypatch):
                 "--threshold-bps",
                 "5.0",
             ],
-            "lightgbm.*--feature-set mentor_clean_v1",
+            "lightgbm.*--feature-set ian_baseline_v1",
         ),
         (
             [
                 "--feature-set",
-                "mentor_clean_v1",
+                "ian_baseline_v1",
                 "--label-mode",
                 "legacy_binary",
             ],
@@ -1534,7 +1534,7 @@ def test_lightgbm_rejects_full_run_before_prepare_data(monkeypatch):
         (
             [
                 "--feature-set",
-                "mentor_clean_v1",
+                "ian_baseline_v1",
                 "--label-mode",
                 "no_trade_band",
             ],
@@ -1543,7 +1543,7 @@ def test_lightgbm_rejects_full_run_before_prepare_data(monkeypatch):
         (
             [
                 "--feature-set",
-                "mentor_clean_v1",
+                "ian_baseline_v1",
                 "--label-mode",
                 "no_trade_band",
                 "--threshold-bps",
@@ -1632,7 +1632,7 @@ def test_lightgbm_validation_only_cli_dispatches_without_torch_or_logreg(
             "lightgbm",
             "--validation-only-report",
             "--feature-set",
-            "mentor_clean_v1",
+            "ian_baseline_v1",
             "--label-mode",
             "no_trade_band",
             "--threshold-bps",
@@ -1922,7 +1922,7 @@ def test_torch_cli_can_select_ms_dlinear_tcn_without_real_training(
             "--models",
             "ms_dlinear_tcn",
             "--feature-set",
-            "mentor_clean_v1",
+            "ian_baseline_v1",
             "--label-mode",
             "no_trade_band",
             "--threshold-bps",
@@ -2137,7 +2137,7 @@ def test_non_validation_torch_main_keeps_test_data_materialization(
             "--models",
             "ms_dlinear_tcn",
             "--feature-set",
-            "mentor_clean_v1",
+            "ian_baseline_v1",
             "--label-mode",
             "no_trade_band",
             "--threshold-bps",
@@ -2247,7 +2247,7 @@ def test_run_model_once_torch_validation_only_uses_train_and_validation_not_test
     metadata = {
         **_sklearn_metadata(),
         **runner.validation_only_report_fields(),
-        "feature_set_id": "mentor_clean_v1",
+        "feature_set_id": "ian_baseline_v1",
         "label_mode": "no_trade_band",
         "threshold_bps": 5.0,
         "threshold_source": "fixed_pre_registered_5bps",
@@ -2712,8 +2712,8 @@ def _assert_validation_only_manifest_no_holdout_test_exposure(columns):
     assert sorted(forbidden.intersection(columns)) == []
 
 
-def _assert_mentor_clean_validation_only_metadata(metadata):
-    assert metadata["feature_set_id"] == "mentor_clean_v1"
+def _assert_ian_baseline_validation_only_metadata(metadata):
+    assert metadata["feature_set_id"] == "ian_baseline_v1"
     assert metadata["label_mode"] == "no_trade_band"
     assert metadata["threshold_bps"] == 5.0
     assert metadata["report_scope"] == "validation_only"
@@ -2732,7 +2732,7 @@ def _assert_mentor_clean_validation_only_metadata(metadata):
 def _torch_validation_only_cli_args(
     output_dir,
     *,
-    feature_set="mentor_clean_v1",
+    feature_set="ian_baseline_v1",
     label_mode="no_trade_band",
     threshold_bps="5.0",
     models=("ms_dlinear_tcn",),
@@ -2985,16 +2985,16 @@ def _no_trade_metadata():
     metadata = _sklearn_metadata()
     metadata.update(
         {
-            "feature_set_id": "mentor_clean_v1",
-            "feature_columns": list(runner.MENTOR_CLEAN_V1_FEATURES),
+            "feature_set_id": "ian_baseline_v1",
+            "feature_columns": list(runner.IAN_BASELINE_V1_FEATURES),
             "label_mode": "no_trade_band",
             **runner.protocol_metadata_fields(
-                "mentor_clean_v1",
+                "ian_baseline_v1",
                 "no_trade_band",
                 5.0,
                 5.0,
             ),
-            "label_semantics": "phase1b_no_trade_band_diagnostic",
+            "label_semantics": "legacy_runner_no_trade_band_diagnostic",
             "label_formula": (
                 "label = 1 if future_avg_r > threshold else 0 if "
                 "future_avg_r < -threshold else NaN"

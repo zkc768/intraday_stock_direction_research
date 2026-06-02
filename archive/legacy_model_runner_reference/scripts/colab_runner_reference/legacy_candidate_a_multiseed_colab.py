@@ -1,5 +1,5 @@
 # %% [markdown]
-# # P1B.11b Candidate A multi-seed LSTM no-trade-band rerun
+# # Legacy Candidate A multi-seed LSTM no-trade-band rerun
 #
 # Generated locally for Colab execution.
 #
@@ -7,7 +7,7 @@
 #
 # Requires Google Drive data at `/content/drive/MyDrive/stockdata/`.
 #
-# Requires GitHub repo `zkc768/hf_stock_clf`.
+# Requires GitHub repo `zkc768/intraday_stock_direction_research`.
 #
 # Uses seeds=[42, 43, 44].
 #
@@ -52,11 +52,11 @@ SELECTION_BIAS_DISCLOSURE = (
     "with coverage/window retention."
 )
 
-print("P1B.11b Candidate A multi-seed LSTM no-trade-band rerun")
+print("Legacy Candidate A multi-seed LSTM no-trade-band rerun")
 print("Generated locally for Colab execution.")
 print("Do not commit experiment outputs.")
 print("Requires Google Drive data at /content/drive/MyDrive/stockdata/.")
-print("Requires GitHub repo zkc768/hf_stock_clf.")
+print("Requires GitHub repo zkc768/intraday_stock_direction_research.")
 print("Uses seeds=[42, 43, 44].")
 print("No TCN/DLinear/Notebook 03.")
 print(SELECTION_BIAS_DISCLOSURE)
@@ -84,14 +84,14 @@ except Exception:
 # ## 3. Repo Clone / Pull / Commit Guard
 
 # %%
-REPO_URL = "https://github.com/zkc768/hf_stock_clf.git"
-REPO_DIR = Path("/content/hf_stock_clf")
+REPO_URL = "https://github.com/zkc768/intraday_stock_direction_research.git"
+REPO_DIR = Path("/content/intraday_stock_direction_research")
 BRANCH = "master"
 REQUIRED_COMMIT = "208d1e3"
 REQUIRED_COMMITS = {
     "e2e2869": "fix(dataset): align window labels to prediction point",
-    "fc7b863": "docs(phase1b): record label-alignment fixed smoke",
-    "208d1e3": "docs(phase1b): record LSTM rerun results",
+    "fc7b863": "docs(legacy_runner): record label-alignment fixed smoke",
+    "208d1e3": "docs(legacy_runner): record LSTM rerun results",
 }
 SENSITIVE_TOKENS = []
 
@@ -112,7 +112,7 @@ def get_clone_url() -> tuple[str, str]:
 
     if token:
         SENSITIVE_TOKENS.append(token)
-        actual_url = f"https://x-access-token:{token}@github.com/zkc768/hf_stock_clf.git"
+        actual_url = f"https://x-access-token:{token}@github.com/zkc768/intraday_stock_direction_research.git"
         return actual_url, REPO_URL
 
     return REPO_URL, REPO_URL
@@ -121,7 +121,7 @@ def get_clone_url() -> tuple[str, str]:
 def sanitize_command_output(output: str) -> str:
     sanitized = output
     sanitized = re.sub(
-        r"https://x-access-token:[^@\s]+@github\.com/zkc768/hf_stock_clf\.git",
+        r"https://x-access-token:[^@\s]+@github\.com/zkc768/intraday_stock_direction_research\.git",
         REPO_URL,
         sanitized,
     )
@@ -227,36 +227,36 @@ print(f"Repo guard PASS: HEAD={GIT_COMMIT_HASH}")
 
 # %%
 for module_name in list(sys.modules):
-    if module_name == "ml_utils" or module_name.startswith("ml_utils."):
+    if module_name == "runner_utils" or module_name.startswith("runner_utils."):
         del sys.modules[module_name]
 
 repo_path = str(REPO_DIR)
 sys.path = [path for path in sys.path if path != repo_path]
 sys.path.insert(0, repo_path)
 
-import ml_utils
-from ml_utils.checkpoint import load_checkpoint
-from ml_utils.config import DataConfig
-from ml_utils.dataset import WindowedClassificationDataset
-from ml_utils.dataset import fit_scaler_on_train
-from ml_utils.dataset import make_no_trade_band_labels
-from ml_utils.dataset import make_time_splits
-from ml_utils.dataset import transform_split
-from ml_utils.dataset import trim_labels_at_split_boundary
-from ml_utils.metrics import always_predict_baseline_metrics
-from ml_utils.metrics import dummy_baseline_metrics
-from ml_utils.models.lstm_classifier import LSTMClassifier
-from ml_utils.seed import seed_everything
-from ml_utils.trainer import Trainer
-from ml_utils.trainer import evaluate
+import runner_utils
+from runner_utils.checkpoint import load_checkpoint
+from runner_utils.config import DataConfig
+from runner_utils.dataset import WindowedClassificationDataset
+from runner_utils.dataset import fit_scaler_on_train
+from runner_utils.dataset import make_no_trade_band_labels
+from runner_utils.dataset import make_time_splits
+from runner_utils.dataset import transform_split
+from runner_utils.dataset import trim_labels_at_split_boundary
+from runner_utils.metrics import always_predict_baseline_metrics
+from runner_utils.metrics import dummy_baseline_metrics
+from runner_utils.models.lstm_classifier import LSTMClassifier
+from runner_utils.seed import seed_everything
+from runner_utils.trainer import Trainer
+from runner_utils.trainer import evaluate
 
 dataset_source = inspect.getfile(WindowedClassificationDataset)
-print(f"ml_utils imported from: {ml_utils.__file__}")
+print(f"runner_utils imported from: {runner_utils.__file__}")
 print(f"WindowedClassificationDataset imported from: {dataset_source}")
 assert dataset_source.startswith(str(REPO_DIR)), dataset_source
-assert "ml_utils.models.tcn_classifier" not in sys.modules
-assert "ml_utils.models.dlinear_classifier" not in sys.modules
-print("Import cache guard PASS: using fresh Colab clone ml_utils.")
+assert "runner_utils.models.tcn_classifier" not in sys.modules
+assert "runner_utils.models.dlinear_classifier" not in sys.modules
+print("Import cache guard PASS: using fresh Colab clone runner_utils.")
 print("No TCN/DLinear imports needed for this run.")
 
 
@@ -268,7 +268,7 @@ CONFIG = {
     "seeds": [42, 43, 44],
     "tickers": ["CSCO", "JPM", "KO", "MSFT", "WMT"],
     "raw_data_dir": "/content/drive/MyDrive/stockdata/Dow_30_1min",
-    "output_dir": "/content/drive/MyDrive/stockdata/phase1b_lstm_rerun_p1b11b_candidate_a_multiseed",
+    "output_dir": "/content/drive/MyDrive/stockdata/legacy_runner_lstm_rerun_candidate_a_multiseed",
     "train_ratio": 0.70,
     "val_ratio": 0.15,
     "test_ratio": 0.15,
@@ -319,8 +319,8 @@ SUSPICIOUS_DELTA_THRESHOLD = 0.30
 
 RAW_DATA_DIR = Path(CONFIG["raw_data_dir"])
 OUTPUT_BASE_DIR = Path(CONFIG["output_dir"])
-P1B11B_RUN_ID = f"run_{RUN_START_TIME.strftime('%Y%m%dT%H%M%SZ')}"
-OUTPUT_DIR = OUTPUT_BASE_DIR / P1B11B_RUN_ID
+LEGACY_RUN_ID = f"run_{RUN_START_TIME.strftime('%Y%m%dT%H%M%SZ')}"
+OUTPUT_DIR = OUTPUT_BASE_DIR / LEGACY_RUN_ID
 REQUIRED_ARTIFACT_NAMES = [
     "per_seed_ticker_results.csv",
     "per_seed_summary.csv",
@@ -329,17 +329,17 @@ REQUIRED_ARTIFACT_NAMES = [
     "window_count_check.json",
 ]
 OLD_OUTPUT_DIRS = {
-    Path("/content/drive/MyDrive/stockdata/phase1b_lstm_rerun_outputs"),
-    Path("/content/drive/MyDrive/stockdata/phase1b_lstm_rerun_outputs_LEAKY_INVALID"),
-    Path("/content/drive/MyDrive/stockdata/phase1b_lstm_rerun_outputs_alignment_fixed"),
-    Path("/content/drive/MyDrive/stockdata/phase1b_lstm_rerun_outputs_alignment_fixed_full_ad"),
+    Path("/content/drive/MyDrive/stockdata/legacy_runner_lstm_rerun_outputs"),
+    Path("/content/drive/MyDrive/stockdata/legacy_runner_lstm_rerun_outputs_LEAKY_INVALID"),
+    Path("/content/drive/MyDrive/stockdata/legacy_runner_lstm_rerun_outputs_alignment_fixed"),
+    Path("/content/drive/MyDrive/stockdata/legacy_runner_lstm_rerun_outputs_alignment_fixed_full_ad"),
 }
 EXPECTED_POOLED_WINDOW_COUNTS = {"train": 213384, "val": 11903, "test": 19190}
 assert OUTPUT_BASE_DIR not in OLD_OUTPUT_DIRS
-assert str(OUTPUT_BASE_DIR).endswith("phase1b_lstm_rerun_p1b11b_candidate_a_multiseed")
+assert str(OUTPUT_BASE_DIR).endswith("legacy_runner_lstm_rerun_candidate_a_multiseed")
 
 if CONFIG.get("reset_output_dir_on_start", True) and OUTPUT_DIR.exists():
-    print(f"Resetting current P1B.11b output directory before run: {OUTPUT_DIR}")
+    print(f"Resetting current Legacy Candidate A output directory before run: {OUTPUT_DIR}")
     shutil.rmtree(OUTPUT_DIR)
 
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
@@ -756,8 +756,8 @@ def assert_expected_window_counts(seed: int, prepared: dict) -> dict[str, int]:
     expected = EXPECTED_POOLED_WINDOW_COUNTS
     if observed != expected:
         raise RuntimeError(
-            "Candidate A pooled window counts differ from P1B.10. "
-            "This indicates pipeline drift from P1B.10. "
+            "Candidate A pooled window counts differ from prior single-seed route. "
+            "This indicates pipeline drift from prior single-seed route. "
             f"seed={seed} observed train/val/test="
             f"{observed['train']}/{observed['val']}/{observed['test']} "
             f"expected train/val/test={expected['train']}/{expected['val']}/{expected['test']}"
@@ -1020,9 +1020,9 @@ window_count_check = {
     "pooled_counts_by_seed": {},
 }
 MANIFEST = {
-    "phase": "P1B.11b",
-    "source": "checkpoints/p1b10_colab_code/p1b10_lstm_full_ad_colab.py",
-    "source_of_truth": "P1B.10",
+    "phase": "Legacy Candidate A",
+    "source": "checkpoints/legacy_prior_run_colab_code/legacy_prior_run_lstm_full_ad_colab.py",
+    "source_of_truth": "prior single-seed route",
     "git_head": GIT_COMMIT_HASH,
     "git_commit_hash": GIT_COMMIT_HASH,
     "git_log_oneline_5": GIT_LOG_ONELINE_5,
@@ -1063,10 +1063,10 @@ MANIFEST = {
     "end_time": None,
     "runtime": None,
     "old_leaky_results_invalid_warning": (
-        "Old P1B.9 leaky outputs are invalid and must not be used as final results."
+        "Old older leaky route leaky outputs are invalid and must not be used as final results."
     ),
-    "p1b9d_smoke_not_final_warning": (
-        "P1B.9d Candidate A alignment-fixed smoke is not the P1B.11b multi-seed result."
+    "older_smoke_not_final_warning": (
+        "older alignment-fixed smoke Candidate A alignment-fixed smoke is not the Legacy Candidate A multi-seed result."
     ),
     "selection_bias_disclosure": SELECTION_BIAS_DISCLOSURE,
 }
@@ -1251,4 +1251,4 @@ display(per_seed_summary.round(4))
 print("\nOverall multi-seed summary:")
 display(overall_multiseed_summary.round(4))
 print("\nFinal results are saved artifacts, not committed repo files.")
-print("P1B.11b Candidate A multi-seed Colab run complete only if all cells above executed without guard failure.")
+print("Legacy Candidate A multi-seed Colab run complete only if all cells above executed without guard failure.")

@@ -53,25 +53,25 @@ SCALER_DIAGNOSTIC_COLUMNS = [
 
 
 def _compute_bar_count_summary(*args, **kwargs):
-    from ml_utils.profiling import compute_bar_count_summary
+    from runner_utils.profiling import compute_bar_count_summary
 
     return compute_bar_count_summary(*args, **kwargs)
 
 
 def _profile_label_capacity(*args, **kwargs):
-    from ml_utils.profiling import profile_label_capacity
+    from runner_utils.profiling import profile_label_capacity
 
     return profile_label_capacity(*args, **kwargs)
 
 
 def _add_intraday_feasibility_flags(*args, **kwargs):
-    from ml_utils.profiling import add_intraday_feasibility_flags
+    from runner_utils.profiling import add_intraday_feasibility_flags
 
     return add_intraday_feasibility_flags(*args, **kwargs)
 
 
 def _compute_scaler_diagnostic(*args, **kwargs):
-    from ml_utils.profiling import compute_scaler_diagnostic
+    from runner_utils.profiling import compute_scaler_diagnostic
 
     return compute_scaler_diagnostic(*args, **kwargs)
 

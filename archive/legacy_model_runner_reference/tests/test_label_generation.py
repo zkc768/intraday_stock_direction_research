@@ -4,7 +4,7 @@ import pytest
 
 
 def test_label_formula_matches_hand_computed_future_average_return():
-    from ml_utils.dataset import make_binary_labels_from_future_avg_return
+    from runner_utils.dataset import make_binary_labels_from_future_avg_return
 
     df = pd.DataFrame({"close": [100.0, 110.0, 132.0, 118.8, 106.92, 112.266]})
 
@@ -39,7 +39,7 @@ def test_label_formula_matches_hand_computed_future_average_return():
 
 
 def test_zero_future_average_return_maps_to_non_up_class_zero():
-    from ml_utils.dataset import make_binary_labels_from_future_avg_return
+    from runner_utils.dataset import make_binary_labels_from_future_avg_return
 
     df = pd.DataFrame({"close": [100.0, 125.0, 93.75, 100.0]})
 
@@ -55,7 +55,7 @@ def test_zero_future_average_return_maps_to_non_up_class_zero():
 
 
 def test_tail_k_rows_are_nan_and_row_count_is_preserved(raw_price_df):
-    from ml_utils.dataset import make_binary_labels_from_future_avg_return
+    from runner_utils.dataset import make_binary_labels_from_future_avg_return
 
     k = 2
 
@@ -68,7 +68,7 @@ def test_tail_k_rows_are_nan_and_row_count_is_preserved(raw_price_df):
 
 
 def test_label_generation_does_not_modify_input_dataframe(raw_price_df):
-    from ml_utils.dataset import make_binary_labels_from_future_avg_return
+    from runner_utils.dataset import make_binary_labels_from_future_avg_return
 
     original = raw_price_df.copy(deep=True)
 
@@ -81,14 +81,14 @@ def test_label_generation_does_not_modify_input_dataframe(raw_price_df):
 
 @pytest.mark.parametrize("bad_k", [0, -1])
 def test_invalid_k_raises_value_error(raw_price_df, bad_k):
-    from ml_utils.dataset import make_binary_labels_from_future_avg_return
+    from runner_utils.dataset import make_binary_labels_from_future_avg_return
 
     with pytest.raises(ValueError):
         make_binary_labels_from_future_avg_return(raw_price_df, price_col="close", k=bad_k)
 
 
 def test_missing_price_column_raises_clear_exception(raw_price_df):
-    from ml_utils.dataset import make_binary_labels_from_future_avg_return
+    from runner_utils.dataset import make_binary_labels_from_future_avg_return
 
     with pytest.raises((ValueError, KeyError)):
         make_binary_labels_from_future_avg_return(raw_price_df, price_col="missing_close", k=2)

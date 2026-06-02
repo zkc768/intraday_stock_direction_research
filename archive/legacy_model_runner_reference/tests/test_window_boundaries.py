@@ -64,7 +64,7 @@ def _two_ticker_two_day_labeled_frame():
 
 
 def test_trim_labels_at_split_boundary_marks_tail_invalid_without_deleting_rows(labeled_df_with_tail_nan):
-    from ml_utils.dataset import trim_labels_at_split_boundary
+    from runner_utils.dataset import trim_labels_at_split_boundary
 
     original = labeled_df_with_tail_nan.copy(deep=True)
 
@@ -77,7 +77,7 @@ def test_trim_labels_at_split_boundary_marks_tail_invalid_without_deleting_rows(
 
 
 def test_trim_labels_at_split_boundary_groups_interleaved_tickers_without_deleting_rows():
-    from ml_utils.dataset import trim_labels_at_split_boundary
+    from runner_utils.dataset import trim_labels_at_split_boundary
 
     timestamps = pd.date_range("2024-01-02 09:30", periods=5, freq="5min")
     rows = []
@@ -111,7 +111,7 @@ def test_trim_labels_at_split_boundary_groups_interleaved_tickers_without_deleti
 
 
 def test_trim_labels_at_split_boundary_rejects_out_of_order_timestamp_within_ticker():
-    from ml_utils.dataset import trim_labels_at_split_boundary
+    from runner_utils.dataset import trim_labels_at_split_boundary
 
     frame = _two_ticker_two_day_labeled_frame()
     frame.loc[3, "timestamp"] = pd.Timestamp("2024-01-02 09:25")
@@ -136,7 +136,7 @@ def test_trim_labels_at_split_boundary_rejects_out_of_order_timestamp_within_tic
 
 
 def test_trim_labels_at_split_boundary_rejects_duplicate_timestamp_within_ticker():
-    from ml_utils.dataset import trim_labels_at_split_boundary
+    from runner_utils.dataset import trim_labels_at_split_boundary
 
     frame = _two_ticker_two_day_labeled_frame()
     frame.loc[3, "timestamp"] = frame.loc[1, "timestamp"]
@@ -159,7 +159,7 @@ def test_trim_labels_at_split_boundary_rejects_duplicate_timestamp_within_ticker
 
 
 def test_trim_labels_at_split_boundary_rejects_invalid_binary_label_with_ticker_context():
-    from ml_utils.dataset import trim_labels_at_split_boundary
+    from runner_utils.dataset import trim_labels_at_split_boundary
 
     frame = _two_ticker_two_day_labeled_frame()
     frame.loc[5, "label"] = 2.0
@@ -180,7 +180,7 @@ def test_trim_labels_at_split_boundary_rejects_invalid_binary_label_with_ticker_
 
 
 def test_trim_labels_marks_cross_trading_day_horizon_invalid_without_deleting_rows():
-    from ml_utils.dataset import trim_labels_at_split_boundary
+    from runner_utils.dataset import trim_labels_at_split_boundary
 
     frame = _two_day_labeled_frame()
 
@@ -193,7 +193,7 @@ def test_trim_labels_marks_cross_trading_day_horizon_invalid_without_deleting_ro
 
 
 def test_no_label_horizon_crosses_trading_day():
-    from ml_utils.dataset import trim_labels_at_split_boundary
+    from runner_utils.dataset import trim_labels_at_split_boundary
 
     frame = _two_ticker_two_day_labeled_frame()
     original = frame.copy(deep=True)
@@ -214,7 +214,7 @@ def test_no_label_horizon_crosses_trading_day():
 
 
 def test_windowed_dataset_does_not_create_input_windows_across_trading_days():
-    from ml_utils.dataset import WindowedClassificationDataset
+    from runner_utils.dataset import WindowedClassificationDataset
 
     frame = _two_day_labeled_frame()
 
@@ -236,7 +236,7 @@ def test_windowed_dataset_does_not_create_input_windows_across_trading_days():
 
 
 def test_no_window_crosses_trading_day():
-    from ml_utils.dataset import WindowedClassificationDataset
+    from runner_utils.dataset import WindowedClassificationDataset
 
     frame = _two_ticker_two_day_labeled_frame()
 
@@ -255,7 +255,7 @@ def test_no_window_crosses_trading_day():
 
 
 def test_windowed_dataset_validates_label_at_window_end(split_df_after_trim):
-    from ml_utils.dataset import WindowedClassificationDataset
+    from runner_utils.dataset import WindowedClassificationDataset
 
     frame = _with_ticker(split_df_after_trim)
     window_size = 2
@@ -299,7 +299,7 @@ def test_windowed_dataset_validates_label_at_window_end(split_df_after_trim):
 
 
 def test_windowed_dataset_returns_expected_tensor_shapes_and_label_dtype(split_df_after_trim):
-    from ml_utils.dataset import WindowedClassificationDataset
+    from runner_utils.dataset import WindowedClassificationDataset
 
     frame = _with_ticker(split_df_after_trim)
 
@@ -327,7 +327,7 @@ def test_windowed_dataset_returns_expected_tensor_shapes_and_label_dtype(split_d
 
 
 def test_windowed_dataset_rejects_invalid_binary_label():
-    from ml_utils.dataset import WindowedClassificationDataset
+    from runner_utils.dataset import WindowedClassificationDataset
 
     frame = _two_ticker_two_day_labeled_frame()
     frame.loc[5, "label"] = 2.0
@@ -352,7 +352,7 @@ def test_windowed_dataset_rejects_invalid_binary_label():
 
 
 def test_windowed_dataset_rejects_duplicate_timestamp_within_ticker():
-    from ml_utils.dataset import WindowedClassificationDataset
+    from runner_utils.dataset import WindowedClassificationDataset
 
     frame = _two_day_labeled_frame()
     frame.loc[1, "timestamp"] = frame.loc[0, "timestamp"]
@@ -377,7 +377,7 @@ def test_windowed_dataset_rejects_duplicate_timestamp_within_ticker():
 
 
 def test_windowed_dataset_rejects_out_of_order_timestamp_within_ticker():
-    from ml_utils.dataset import WindowedClassificationDataset
+    from runner_utils.dataset import WindowedClassificationDataset
 
     frame = _two_ticker_two_day_labeled_frame()
     frame.loc[3, "timestamp"] = pd.Timestamp("2024-01-02 09:25")
@@ -405,7 +405,7 @@ def test_windowed_dataset_rejects_out_of_order_timestamp_within_ticker():
 
 
 def test_windowed_dataset_returns_features_from_correct_interleaved_ticker_group():
-    from ml_utils.dataset import WindowedClassificationDataset
+    from runner_utils.dataset import WindowedClassificationDataset
 
     frame = _two_ticker_two_day_labeled_frame()
 
@@ -438,7 +438,7 @@ def test_windowed_dataset_returns_features_from_correct_interleaved_ticker_group
 
 
 def test_stride_controls_window_count(split_df_after_trim):
-    from ml_utils.dataset import WindowedClassificationDataset
+    from runner_utils.dataset import WindowedClassificationDataset
 
     frame = _with_ticker(split_df_after_trim)
     kwargs = dict(
@@ -460,7 +460,7 @@ def test_stride_controls_window_count(split_df_after_trim):
 
 @pytest.mark.parametrize("bad_stride", [0, -1])
 def test_stride_must_be_positive(split_df_after_trim, bad_stride):
-    from ml_utils.dataset import WindowedClassificationDataset
+    from runner_utils.dataset import WindowedClassificationDataset
 
     frame = _with_ticker(split_df_after_trim)
 

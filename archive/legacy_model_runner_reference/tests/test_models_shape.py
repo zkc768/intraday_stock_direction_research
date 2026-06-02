@@ -3,7 +3,7 @@ import torch
 
 
 def _get_lstm_classifier():
-    from ml_utils.models.lstm_classifier import LSTMClassifier
+    from runner_utils.models.lstm_classifier import LSTMClassifier
 
     return LSTMClassifier
 
@@ -129,7 +129,7 @@ def test_lstm_classifier_rejects_missing_batch_dimension():
 
 
 def _get_dlinear_classifier():
-    from ml_utils.models.dlinear_classifier import DLinearClassifier
+    from runner_utils.models.dlinear_classifier import DLinearClassifier
 
     return DLinearClassifier
 

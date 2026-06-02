@@ -3,7 +3,7 @@ import torch
 
 
 def _get_tcn_classifier():
-    from ml_utils.models.tcn_classifier import TCNClassifier
+    from runner_utils.models.tcn_classifier import TCNClassifier
 
     return TCNClassifier
 

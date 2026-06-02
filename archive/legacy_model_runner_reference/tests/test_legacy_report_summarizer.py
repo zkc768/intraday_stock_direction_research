@@ -3,7 +3,7 @@ import json
 import pandas as pd
 import pytest
 
-from scripts.phase1b_local import summarize_runs
+from scripts.local_runner_reference import summarize_runs
 
 
 def test_summarizer_writes_protocol_scoped_tables(tmp_path):
@@ -120,7 +120,7 @@ def test_collect_run_dirs_scans_immediate_children(tmp_path):
         root / "child_run",
         run_id="child_run",
         label_mode="no_trade_band",
-        label_semantics="phase1b_no_trade_band_diagnostic",
+        label_semantics="legacy_runner_no_trade_band_diagnostic",
         zero_return_policy="neutral_nan",
         no_trade_band_enabled=True,
         neutral_policy="abs(future_avg_r) <= threshold_bps is NaN/skipped",
@@ -136,7 +136,7 @@ def test_optional_protocol_columns_are_backfilled_for_older_runs(tmp_path):
         tmp_path / "older_run",
         run_id="older_run",
         label_mode="no_trade_band",
-        label_semantics="phase1b_no_trade_band_diagnostic",
+        label_semantics="legacy_runner_no_trade_band_diagnostic",
         zero_return_policy="neutral_nan",
         no_trade_band_enabled=True,
         neutral_policy="abs(future_avg_r) <= threshold_bps is NaN/skipped",
@@ -159,7 +159,7 @@ def test_optional_protocol_columns_are_backfilled_for_older_runs(tmp_path):
     tables = summarize_runs.read_run_tables(run_dir)
     outputs = summarize_runs.summarize_run_dirs([run_dir], tmp_path / "report")
 
-    assert tables["results"].loc[0, "label_semantics"] == "phase1b_no_trade_band_diagnostic"
+    assert tables["results"].loc[0, "label_semantics"] == "legacy_runner_no_trade_band_diagnostic"
     assert tables["manifest"].loc[0, "zero_return_policy"] == "neutral_nan"
     assert pd.isna(tables["manifest"].loc[0, "label_n_zero_return"])
     assert outputs["run_summary"].loc[0, "pooled_retained_pct"] == pytest.approx(0.847)

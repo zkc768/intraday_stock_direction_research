@@ -14,7 +14,7 @@ DIAGNOSTIC_KEYS = {
 
 
 def _make_no_trade_band_labels(*args, **kwargs):
-    from ml_utils.dataset import make_no_trade_band_labels
+    from runner_utils.dataset import make_no_trade_band_labels
 
     return make_no_trade_band_labels(*args, **kwargs)
 
@@ -172,7 +172,7 @@ def test_no_cross_day_filter_when_timestamp_col_is_none():
 
 
 def test_threshold_zero_matches_legacy_on_nonzero_same_day_returns():
-    from ml_utils.dataset import make_binary_labels_from_future_avg_return
+    from runner_utils.dataset import make_binary_labels_from_future_avg_return
 
     df = _price_df(
         [100.0, 101.0, 100.0, 102.0, 101.0, 103.0],
@@ -205,7 +205,7 @@ def test_threshold_zero_matches_legacy_on_nonzero_same_day_returns():
 
 
 def test_threshold_zero_exact_zero_behavior_is_documented():
-    from ml_utils.dataset import make_binary_labels_from_future_avg_return
+    from runner_utils.dataset import make_binary_labels_from_future_avg_return
 
     df = _price_df([100.0, 100.0, 101.0])
 
@@ -256,7 +256,7 @@ def test_output_preserves_row_count_order_and_input_is_not_mutated():
     pd.testing.assert_frame_equal(df, original)
     assert "future_avg_r" in out_df.columns
     assert "label" in out_df.columns
-    # PHASE_1B_PLAN.md used the draft name "future_avg_return", but current ml_utils convention is "future_avg_r".
+    # The legacy route plan used the draft name "future_avg_return", but current runner_utils convention is "future_avg_r".
     assert "future_avg_return" not in out_df.columns
     assert "future_avg_r" not in df.columns
     assert "label" not in df.columns

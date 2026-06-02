@@ -9,8 +9,8 @@ from typing import Any
 import pandas as pd
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
-DEFAULT_INPUT_DIR = PROJECT_ROOT / "checkpoints" / "phase1b_local_reports" / "table_records_20260525"
-DEFAULT_OUTPUT_DIR = PROJECT_ROOT / "checkpoints" / "phase1b_paper_tables"
+DEFAULT_INPUT_DIR = PROJECT_ROOT / "checkpoints" / "local_runner_reference_reports" / "table_records_20260525"
+DEFAULT_OUTPUT_DIR = PROJECT_ROOT / "checkpoints" / "legacy_runner_paper_tables"
 
 INPUT_FILES = {
     "run_summary": "run_summary.csv",
@@ -106,7 +106,7 @@ OUTPUT_ORDER = (
 MODEL_ORDER = {"dlinear": 0, "lstm": 1, "tcn": 2}
 ALLOWED_LABEL_SEMANTICS = {
     "canonical_phase1_full_binary",
-    "phase1b_no_trade_band_diagnostic",
+    "legacy_runner_no_trade_band_diagnostic",
 }
 LOW_COVERAGE_THRESHOLD = 0.2
 LOW_TEST_WINDOWS_THRESHOLD = 5000
@@ -662,7 +662,7 @@ def build_ticker_heatmap_data(by_model_ticker: pd.DataFrame) -> pd.DataFrame:
 def regime_label(row: pd.Series) -> str:
     if row["label_semantics"] == "canonical_phase1_full_binary":
         return "canonical_full_binary"
-    if row["label_semantics"] != "phase1b_no_trade_band_diagnostic":
+    if row["label_semantics"] != "legacy_runner_no_trade_band_diagnostic":
         raise ValueError(f"unknown label_semantics: {row['label_semantics']}")
     threshold = format_threshold(row["threshold_bps"])
     return f"{threshold}bps_no_trade_band_diagnostic"

@@ -5,7 +5,7 @@ import torch
 
 
 def _get_classifier():
-    from ml_utils.models.ms_dlinear_tcn_classifier import MultiScaleDLinearTCNClassifier
+    from runner_utils.models.ms_dlinear_tcn_classifier import MultiScaleDLinearTCNClassifier
 
     return MultiScaleDLinearTCNClassifier
 

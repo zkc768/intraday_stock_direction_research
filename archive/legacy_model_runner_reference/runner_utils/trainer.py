@@ -7,8 +7,8 @@ import torch
 import torch.nn as nn
 from torch.utils.data import DataLoader
 
-from ml_utils.checkpoint import save_checkpoint
-from ml_utils.metrics import compute_classification_metrics
+from runner_utils.checkpoint import save_checkpoint
+from runner_utils.metrics import compute_classification_metrics
 
 
 def train_one_epoch(

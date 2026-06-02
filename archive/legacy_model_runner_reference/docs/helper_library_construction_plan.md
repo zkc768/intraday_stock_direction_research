@@ -1,6 +1,6 @@
-# ml_utils Historical Reference
+# runner_utils Historical Reference
 
-> This file used to be the active construction plan for `ml_utils`.
+> This file used to be the active construction plan for `runner_utils`.
 > It is now a historical implementation reference only.
 >
 > The active research workflow is:
@@ -11,13 +11,13 @@
 
 ---
 
-## 1. Current Role of ml_utils
+## 1. Current Role of runner_utils
 
-`ml_utils/` is a small helper library that protects stable, repeated research
+`runner_utils/` is a small helper library that protects stable, repeated research
 logic. It is not the product, not the default workflow, and not a reason to turn
 ordinary exploration into a backend project.
 
-Use `ml_utils/` for code that must be correct every time:
+Use `runner_utils/` for code that must be correct every time:
 
 - chronological split handling
 - split-boundary and trading-day label invalidation
@@ -31,16 +31,16 @@ justify tests.
 
 ---
 
-## 2. When To Modify ml_utils
+## 2. When To Modify runner_utils
 
-Modify `ml_utils/` only when all of these are true:
+Modify `runner_utils/` only when all of these are true:
 
 1. The notebook has shown that the logic is repeated or safety-critical.
 2. The exact function boundary is clear.
 3. The behavior can be tested with synthetic in-memory data.
 4. The change protects research validity or reduces real duplication.
 
-Do not modify `ml_utils/` just to make a notebook look tidier.
+Do not modify `runner_utils/` just to make a notebook look tidier.
 
 ---
 
@@ -99,6 +99,6 @@ testable
 small
 ```
 
-If a future agent wants to change `ml_utils/`, it should first state the
+If a future agent wants to change `runner_utils/`, it should first state the
 notebook evidence that motivates the extraction and the exact tests that will
 protect the behavior.

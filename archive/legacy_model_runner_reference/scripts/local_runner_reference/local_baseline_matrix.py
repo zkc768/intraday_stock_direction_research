@@ -24,29 +24,29 @@ PROJECT_ROOT = Path(__file__).resolve().parents[2]
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
-from ml_utils.checkpoint import load_checkpoint
-from ml_utils.config import DataConfig
-from ml_utils.dataset import WindowedClassificationDataset
-from ml_utils.dataset import fit_scaler_on_train
-from ml_utils.dataset import make_binary_labels_from_future_avg_return
-from ml_utils.dataset import make_no_trade_band_labels
-from ml_utils.dataset import make_time_splits
-from ml_utils.dataset import transform_split
-from ml_utils.dataset import trim_labels_at_split_boundary
-from ml_utils.metrics import always_predict_baseline_metrics
-from ml_utils.metrics import compute_classification_metrics
-from ml_utils.metrics import dummy_baseline_metrics
-from ml_utils.models.dlinear_classifier import DLinearClassifier
-from ml_utils.models.lstm_classifier import LSTMClassifier
-from ml_utils.models.ms_dlinear_tcn_classifier import MultiScaleDLinearTCNClassifier
-from ml_utils.models.tcn_classifier import TCNClassifier
-from ml_utils.seed import seed_everything
-from ml_utils.trainer import Trainer
-from ml_utils.trainer import evaluate
+from runner_utils.checkpoint import load_checkpoint
+from runner_utils.config import DataConfig
+from runner_utils.dataset import WindowedClassificationDataset
+from runner_utils.dataset import fit_scaler_on_train
+from runner_utils.dataset import make_binary_labels_from_future_avg_return
+from runner_utils.dataset import make_no_trade_band_labels
+from runner_utils.dataset import make_time_splits
+from runner_utils.dataset import transform_split
+from runner_utils.dataset import trim_labels_at_split_boundary
+from runner_utils.metrics import always_predict_baseline_metrics
+from runner_utils.metrics import compute_classification_metrics
+from runner_utils.metrics import dummy_baseline_metrics
+from runner_utils.models.dlinear_classifier import DLinearClassifier
+from runner_utils.models.lstm_classifier import LSTMClassifier
+from runner_utils.models.ms_dlinear_tcn_classifier import MultiScaleDLinearTCNClassifier
+from runner_utils.models.tcn_classifier import TCNClassifier
+from runner_utils.seed import seed_everything
+from runner_utils.trainer import Trainer
+from runner_utils.trainer import evaluate
 
 
 DEFAULT_DATA_DIR = PROJECT_ROOT / "data"
-DEFAULT_OUTPUT_DIR = PROJECT_ROOT / "checkpoints" / "phase1b_local_baseline"
+DEFAULT_OUTPUT_DIR = PROJECT_ROOT / "checkpoints" / "local_runner_reference_baseline"
 DEFAULT_TICKERS = ("CSCO", "JPM", "KO", "MSFT", "WMT")
 OHLCV_FEATURES = ("open", "high", "low", "close", "volume")
 TECHNICAL_FEATURES = (
@@ -73,7 +73,7 @@ STATIONARY_V1_CORE_FEATURES = (
     "rv_6",
     "log_volume_chg_1",
 )
-MENTOR_CLEAN_V1_FEATURES = (
+IAN_BASELINE_V1_FEATURES = (
     "log_return",
     "close_to_open_return",
     "high_low_range",
@@ -89,7 +89,7 @@ FEATURE_SETS = {
     "ohlcv_only_v1": OHLCV_FEATURES,
     "technical_v1": TECHNICAL_FEATURES,
     "stationary_v1_core": STATIONARY_V1_CORE_FEATURES,
-    "mentor_clean_v1": MENTOR_CLEAN_V1_FEATURES,
+    "ian_baseline_v1": IAN_BASELINE_V1_FEATURES,
 }
 SKLEARN_LOGREG_C_GRID = (0.01, 0.1, 1.0, 10.0)
 SKLEARN_LOGREG_CLASS_WEIGHTS = (None, "balanced")
@@ -613,7 +613,7 @@ def audit_scope_fields(run_mode: str) -> dict[str, Any]:
 def resolve_feature_set(args: argparse.Namespace, run_mode: str) -> str:
     if args.feature_set is not None:
         return args.feature_set
-    return "mentor_clean_v1"
+    return "ian_baseline_v1"
 
 
 def validate_lightgbm_pm_route(
@@ -625,9 +625,9 @@ def validate_lightgbm_pm_route(
 ) -> None:
     if run_mode == "full":
         raise ValueError("--model-family lightgbm does not support --full-run")
-    if feature_set_id != "mentor_clean_v1":
+    if feature_set_id != "ian_baseline_v1":
         raise ValueError(
-            "--model-family lightgbm requires --feature-set mentor_clean_v1"
+            "--model-family lightgbm requires --feature-set ian_baseline_v1"
         )
     if label_mode != "no_trade_band":
         raise ValueError(
@@ -654,9 +654,9 @@ def validate_torch_validation_only_pm_route(
         raise ValueError(
             "--model-family torch validation-only requires --models ms_dlinear_tcn"
         )
-    if feature_set_id != "mentor_clean_v1":
+    if feature_set_id != "ian_baseline_v1":
         raise ValueError(
-            "--model-family torch validation-only requires --feature-set mentor_clean_v1"
+            "--model-family torch validation-only requires --feature-set ian_baseline_v1"
         )
     if label_mode != "no_trade_band":
         raise ValueError(
@@ -670,7 +670,7 @@ def validate_torch_validation_only_pm_route(
 
 def build_run_id(run_mode: str, label_mode: str) -> str:
     timestamp = time.strftime("%Y%m%d_%H%M%S")
-    return f"phase1b_local_{label_mode}_{run_mode}_{timestamp}"
+    return f"local_runner_reference_{label_mode}_{run_mode}_{timestamp}"
 
 
 def protocol_metadata_fields(
@@ -680,7 +680,7 @@ def protocol_metadata_fields(
     cli_threshold_bps: float | None,
 ) -> dict[str, str]:
     decision_time_policy = "not_locked_for_current_protocol"
-    if feature_set_id == "mentor_clean_v1":
+    if feature_set_id == "ian_baseline_v1":
         decision_time_policy = "post_bar_close_completed_bar"
 
     threshold_source = "not_applicable_binary_boundary"
@@ -712,7 +712,7 @@ def label_metadata_fields(label_mode: str, threshold_bps: float) -> dict[str, An
             "neutral_policy": "not_applicable",
         }
     return {
-        "label_semantics": "phase1b_no_trade_band_diagnostic",
+        "label_semantics": "legacy_runner_no_trade_band_diagnostic",
         "label_formula": (
             f"label = 1 if future_avg_r > {threshold_bps} bps; "
             f"label = 0 if future_avg_r < -{threshold_bps} bps"
@@ -768,7 +768,7 @@ def prepare_data(
             data_dir,
             ticker,
             data_config.timestamp_col,
-            sort_rows=feature_set_id not in {"stationary_v1_core", "mentor_clean_v1"},
+            sort_rows=feature_set_id not in {"stationary_v1_core", "ian_baseline_v1"},
         )
         if max_rows_per_ticker is not None:
             raw_df = raw_df.head(max_rows_per_ticker).copy(deep=True)
@@ -1055,8 +1055,8 @@ def read_stock_csv(
 def add_feature_set(df: pd.DataFrame, feature_set_id: str) -> pd.DataFrame:
     if feature_set_id == "ohlcv_only_v1":
         return df.copy(deep=True)
-    if feature_set_id == "mentor_clean_v1":
-        return add_mentor_clean_v1_features(df)
+    if feature_set_id == "ian_baseline_v1":
+        return add_ian_baseline_v1_features(df)
     if feature_set_id == "stationary_v1_core":
         return add_stationary_v1_core_features(df)
     if feature_set_id != "technical_v1":
@@ -1097,9 +1097,9 @@ def add_feature_set(df: pd.DataFrame, feature_set_id: str) -> pd.DataFrame:
     return result.dropna(subset=list(TECHNICAL_FEATURES)).reset_index(drop=True)
 
 
-def add_mentor_clean_v1_features(df: pd.DataFrame) -> pd.DataFrame:
+def add_ian_baseline_v1_features(df: pd.DataFrame) -> pd.DataFrame:
     result = df.copy(deep=True)
-    _validate_mentor_clean_v1_raw_input(result)
+    _validate_ian_baseline_v1_raw_input(result)
     timestamps = pd.to_datetime(result["timestamp"])
     trading_date = timestamps.dt.date
     group_keys: list[pd.Series] = [trading_date]
@@ -1135,7 +1135,7 @@ def add_mentor_clean_v1_features(df: pd.DataFrame) -> pd.DataFrame:
     result["time_of_day_cos"] = np.cos(time_angle)
 
     result = result.replace([np.inf, -np.inf], np.nan)
-    return result.dropna(subset=list(MENTOR_CLEAN_V1_FEATURES)).reset_index(drop=True)
+    return result.dropna(subset=list(IAN_BASELINE_V1_FEATURES)).reset_index(drop=True)
 
 
 def _rsi_14_by_group(close: pd.Series, group_keys: list[pd.Series]) -> pd.Series:
@@ -1183,20 +1183,20 @@ def _normalized_macd_hist_one_group(close: pd.Series) -> pd.Series:
     return (macd - macd_signal) / close
 
 
-def _validate_mentor_clean_v1_raw_input(df: pd.DataFrame) -> None:
+def _validate_ian_baseline_v1_raw_input(df: pd.DataFrame) -> None:
     required_cols = ["timestamp", *OHLCV_FEATURES]
     missing_cols = [column for column in required_cols if column not in df.columns]
     if missing_cols:
-        raise ValueError(f"mentor_clean_v1 missing columns: {missing_cols}")
+        raise ValueError(f"ian_baseline_v1 missing columns: {missing_cols}")
 
     timestamps = pd.to_datetime(df["timestamp"])
     if timestamps.isna().any():
         bad_index = timestamps[timestamps.isna()].index[0]
-        raise ValueError(f"mentor_clean_v1 timestamp is missing at row/index {bad_index}")
+        raise ValueError(f"ian_baseline_v1 timestamp is missing at row/index {bad_index}")
     if "ticker" in df.columns and df["ticker"].isna().any():
         bad_index = df.index[df["ticker"].isna()][0]
-        raise ValueError(f"mentor_clean_v1 ticker is missing at row/index {bad_index}")
-    _validate_mentor_clean_v1_timestamp_order(df, timestamps)
+        raise ValueError(f"ian_baseline_v1 ticker is missing at row/index {bad_index}")
+    _validate_ian_baseline_v1_timestamp_order(df, timestamps)
 
     numeric = {
         column: pd.to_numeric(df[column], errors="coerce")
@@ -1208,7 +1208,7 @@ def _validate_mentor_clean_v1_raw_input(df: pd.DataFrame) -> None:
         if invalid.any():
             bad_index = invalid[invalid].index[0]
             raise ValueError(
-                f"mentor_clean_v1 invalid {column}: must be finite and > 0 "
+                f"ian_baseline_v1 invalid {column}: must be finite and > 0 "
                 f"at row/index {bad_index}"
             )
     volume = numeric["volume"]
@@ -1216,7 +1216,7 @@ def _validate_mentor_clean_v1_raw_input(df: pd.DataFrame) -> None:
     if invalid_volume.any():
         bad_index = invalid_volume[invalid_volume].index[0]
         raise ValueError(
-            "mentor_clean_v1 invalid volume: must be finite and >= 0 "
+            "ian_baseline_v1 invalid volume: must be finite and >= 0 "
             f"at row/index {bad_index}"
         )
 
@@ -1227,24 +1227,24 @@ def _validate_mentor_clean_v1_raw_input(df: pd.DataFrame) -> None:
     invalid_high_low = high < low
     if invalid_high_low.any():
         bad_index = invalid_high_low[invalid_high_low].index[0]
-        raise ValueError(f"mentor_clean_v1 invalid high/low: high must be >= low at row/index {bad_index}")
+        raise ValueError(f"ian_baseline_v1 invalid high/low: high must be >= low at row/index {bad_index}")
     invalid_open = (open_price > high) | (open_price < low)
     if invalid_open.any():
         bad_index = invalid_open[invalid_open].index[0]
         raise ValueError(
-            "mentor_clean_v1 invalid open: must be between low and high "
+            "ian_baseline_v1 invalid open: must be between low and high "
             f"at row/index {bad_index}"
         )
     invalid_close = (close > high) | (close < low)
     if invalid_close.any():
         bad_index = invalid_close[invalid_close].index[0]
         raise ValueError(
-            "mentor_clean_v1 invalid close: must be between low and high "
+            "ian_baseline_v1 invalid close: must be between low and high "
             f"at row/index {bad_index}"
         )
 
 
-def _validate_mentor_clean_v1_timestamp_order(
+def _validate_ian_baseline_v1_timestamp_order(
     df: pd.DataFrame,
     timestamps: pd.Series,
 ) -> None:
@@ -1279,7 +1279,7 @@ def _validate_mentor_timestamp_sequence(
     if duplicated.any():
         bad_index = duplicated[duplicated].index[0]
         raise ValueError(
-            "mentor_clean_v1 duplicate timestamp within "
+            "ian_baseline_v1 duplicate timestamp within "
             f"{scope_name} at row/index {bad_index}"
         )
 
@@ -1289,7 +1289,7 @@ def _validate_mentor_timestamp_sequence(
         position = ordered.index.get_loc(bad_index)
         previous_index = ordered.index[position - 1]
         raise ValueError(
-            "mentor_clean_v1 timestamp must be strict monotonically "
+            "ian_baseline_v1 timestamp must be strict monotonically "
             f"increasing within {scope_name} at row/index {bad_index}; "
             f"current timestamp {ordered.loc[bad_index]}, "
             f"previous timestamp {ordered.loc[previous_index]}"

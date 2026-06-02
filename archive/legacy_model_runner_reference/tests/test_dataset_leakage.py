@@ -15,7 +15,7 @@ def _add_ticker(frame, ticker):
 
 
 def test_make_time_splits_sorts_and_preserves_non_overlapping_rows(raw_multi_ticker_dict):
-    from ml_utils.dataset import make_time_splits
+    from runner_utils.dataset import make_time_splits
 
     for ticker, frame in raw_multi_ticker_dict.items():
         shuffled = frame.iloc[[3, 0, 2, 1, 5, 4, 7, 6, 9, 8, 11, 10]].copy()
@@ -46,7 +46,7 @@ def test_make_time_splits_sorts_and_preserves_non_overlapping_rows(raw_multi_tic
 
 
 def test_fit_scaler_on_train_uses_train_statistics_only():
-    from ml_utils.dataset import fit_scaler_on_train
+    from runner_utils.dataset import fit_scaler_on_train
 
     train = pd.DataFrame({"close": [10.0, 20.0, 30.0], "volume": [100.0, 200.0, 300.0]})
     val = pd.DataFrame({"close": [1000.0, 1100.0], "volume": [10000.0, 11000.0]})
@@ -60,7 +60,7 @@ def test_fit_scaler_on_train_uses_train_statistics_only():
 
 
 def test_transform_split_returns_new_dataframe_and_preserves_input_values():
-    from ml_utils.dataset import fit_scaler_on_train, transform_split
+    from runner_utils.dataset import fit_scaler_on_train, transform_split
 
     train = pd.DataFrame({"close": [10.0, 20.0, 30.0], "volume": [100, 200, 300]})
     split = pd.DataFrame(
@@ -95,7 +95,7 @@ def test_transform_split_returns_new_dataframe_and_preserves_input_values():
 
 @pytest.mark.parametrize("scaler_type", ["standard", "minmax"])
 def test_fit_scaler_on_train_supports_declared_scaler_types(scaler_type):
-    from ml_utils.dataset import fit_scaler_on_train
+    from runner_utils.dataset import fit_scaler_on_train
 
     train = pd.DataFrame({"close": [10.0, 20.0, 30.0], "volume": [100.0, 200.0, 300.0]})
 
@@ -106,7 +106,7 @@ def test_fit_scaler_on_train_supports_declared_scaler_types(scaler_type):
 
 
 def test_invalid_scaler_type_raises_value_error():
-    from ml_utils.dataset import fit_scaler_on_train
+    from runner_utils.dataset import fit_scaler_on_train
 
     train = pd.DataFrame({"close": [10.0, 20.0], "volume": [100.0, 200.0]})
 
@@ -115,7 +115,7 @@ def test_invalid_scaler_type_raises_value_error():
 
 
 def test_windowed_dataset_does_not_create_cross_ticker_windows(raw_multi_ticker_dict):
-    from ml_utils.dataset import WindowedClassificationDataset
+    from runner_utils.dataset import WindowedClassificationDataset
 
     frames = []
     for ticker, frame in raw_multi_ticker_dict.items():

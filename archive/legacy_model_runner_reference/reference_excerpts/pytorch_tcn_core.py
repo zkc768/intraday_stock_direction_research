@@ -2,7 +2,7 @@
 # Local source path: E:\codex_workspace\projects\hf_stock_ml_references\repos\pytorch-tcn\pytorch_tcn\tcn.py
 # Commit: 3b3deac30c9f6a74b5cffbf614378a928268f9bd
 # License: MIT
-# Purpose: Reference only — not imported by ml_utils production code
+# Purpose: Reference only — not imported by runner_utils production code
 
 import warnings
 import torch

@@ -7,7 +7,7 @@ import torch
 
 
 def _checkpoint_functions():
-    from ml_utils.checkpoint import load_checkpoint, save_checkpoint
+    from runner_utils.checkpoint import load_checkpoint, save_checkpoint
 
     return save_checkpoint, load_checkpoint
 

@@ -10,7 +10,7 @@ from typing import Any
 import pandas as pd
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
-DEFAULT_OUTPUT_DIR = PROJECT_ROOT / "checkpoints" / "phase1b_local_reports"
+DEFAULT_OUTPUT_DIR = PROJECT_ROOT / "checkpoints" / "local_runner_reference_reports"
 MODEL_EXPANSION_DELTA_THRESHOLD = 0.01
 
 REQUIRED_RESULT_COLUMNS = (
@@ -353,7 +353,7 @@ def infer_protocol_value(column: str, frame: pd.DataFrame, metadata: dict[str, A
     if column == "label_semantics":
         if label_mode == "legacy_binary":
             return "canonical_phase1_full_binary"
-        return "phase1b_no_trade_band_diagnostic"
+        return "legacy_runner_no_trade_band_diagnostic"
     if column == "zero_return_policy":
         if label_mode == "legacy_binary":
             return "class_0_non_up"

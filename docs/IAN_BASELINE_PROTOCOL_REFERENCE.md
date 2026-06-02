@@ -1,8 +1,7 @@
-# Mentor Clean V1 Protocol Lock
+# Ian Baseline V1 Protocol Lock
 
 Date: 2026-05-30
-Task id: PM-LOCK-002
-Status: protocol lock packet only
+Status: protocol reference only
 
 ## Superseded / Current Live State
 
@@ -11,12 +10,12 @@ statements below are historical. Later gates added git-visible LightGBM
 validation-only planning/review artifacts and a combined MS-DLinear+TCN
 model/runner path.
 
-Current live state for later PM gates:
+Current live state for future research checks:
 
-- `mentor_clean_v1`, `no_trade_band`, explicit fixed `threshold_bps=5.0`,
+- `ian_baseline_v1`, `no_trade_band`, explicit fixed `threshold_bps=5.0`,
   `post_bar_close_completed_bar`, and pooled train-only scaling after
   per-ticker chronological split remain mandatory locks.
-- LightGBM PM-042 is recorded only as diagnostic/protocol observability, not
+- The prior LightGBM route record is diagnostic/protocol observability only, not
   model-performance evidence and not permission to tune or open test/holdout.
 - Combined MS-DLinear+TCN existed as a canonical archived helper-library model
   and runner
@@ -44,9 +43,9 @@ MS-DLinear+TCN only when those routes are real and fair.
 
 Historical code state:
 
-- `mentor_clean_v1` existed in
-  `archive/legacy_model_runner_reference/scripts/phase1b_local/local_baseline_matrix.py`.
-- The runner's `resolve_feature_set(...)` defaults to `mentor_clean_v1`.
+- `ian_baseline_v1` existed in
+  `archive/legacy_model_runner_reference/scripts/local_runner_reference/local_baseline_matrix.py`.
+- The runner's `resolve_feature_set(...)` defaults to `ian_baseline_v1`.
 - The runner supports torch `lstm`, `tcn`, and `dlinear`, plus a separate
   validation/report path for `sklearn_logreg`.
 - No current LightGBM runner or model path was found in the targeted runner,
@@ -57,7 +56,7 @@ Historical code state:
   chronological per-ticker splitting, then applied to train/validation/test.
 
 The knowledge-base mentor specs remain useful as protocol requirements, but
-their statement that `mentor_clean_v1` still needs implementation is stale
+their statement that `ian_baseline_v1` still needs implementation is stale
 relative to the current runner.
 
 ## Lock Scope
@@ -82,7 +81,7 @@ Forbidden under this packet:
 
 ## Decision-Time Convention
 
-`mentor_clean_v1` is locked as a post-bar-close feature protocol: the model
+`ian_baseline_v1` is locked as a post-bar-close feature protocol: the model
 scores only after the current 5-minute bar is complete and before the next
 actionable interval.
 
@@ -108,7 +107,7 @@ packet is not sufficient.
 
 Feature-set lock:
 
-- `feature_set_id = mentor_clean_v1`
+- `feature_set_id = ian_baseline_v1`
 - `feature_view = sequence` for torch baselines unless the next prompt
   explicitly uses the validation-only `sklearn_logreg` tabular path.
 - `technical_v1` is allowed only as a historical control, not as the mentor
@@ -150,9 +149,8 @@ Threshold policy:
 
 Superseded route-readiness note: the blocker decisions in this section are
 retained for historical context. Current non-claim route-control state is
-recorded in PM-042, PM-048, PM-050, PM-051, PM-052, and PM-053. Those later
-docs do not authorize runtime, model selection, evidence promotion, or
-test/holdout access.
+recorded in historical route-control notes. Those notes do not authorize
+runtime, model selection, evidence promotion, or test/holdout access.
 
 LightGBM decision: blocked.
 
@@ -212,21 +210,21 @@ Step 3: Implementation unblock review.
 Copyable prompt for the next approved task:
 
 ```text
-PM-TINY-VAL-003 -- mentor_clean_v1 validation-only smoke
+IAN-BASELINE-TINY-VAL -- ian_baseline_v1 validation-only smoke
 
 Task type: tiny validation / no notebook / no full training.
-Goal: verify that mentor_clean_v1 can produce a validation-only sanity report
+Goal: verify that ian_baseline_v1 can produce a validation-only sanity report
 under the locked post-bar-close, train-only-scaler, fixed-5bps no-trade-band
 protocol.
 
 Allowed files/actions:
 - Read intraday_stock_direction_research/AGENTS.md and docs/IAN_BASELINE_PROTOCOL_REFERENCE.md.
 - For historical reconstruction only, inspect argparse in
-  `archive/legacy_model_runner_reference/scripts/phase1b_local/local_baseline_matrix.py`.
+  `archive/legacy_model_runner_reference/scripts/local_runner_reference/local_baseline_matrix.py`.
 - Run at most one existing sklearn_logreg validation-only smoke if CLI flags
   confirm support.
 - Write only to a new, clearly named validation output directory under
-  intraday_stock_direction_research/checkpoints/mentor_clean_v1_tiny_validation_2026-05-30/.
+  intraday_stock_direction_research/checkpoints/ian_baseline_v1_tiny_validation_2026-05-30/.
 
 Forbidden:
 - No archived helper-library edits.
@@ -239,7 +237,7 @@ Forbidden:
 - No threshold selection from test metrics.
 
 Required protocol:
-- feature_set_id=mentor_clean_v1
+- feature_set_id=ian_baseline_v1
 - decision_time_policy=post_bar_close_completed_bar
 - scaler_id=standard_pooled_train_only_v1
 - label_mode=no_trade_band
@@ -267,6 +265,7 @@ Final report:
 
 ## Minimal Next Approval Needed
 
-Approve only `PM-TINY-VAL-003` if the next move should execute anything. The
-approval should state whether the validation may write a new checkpoint/output
-directory. Without that approval, the route remains read-only and protocol-only.
+Approve only `IAN-BASELINE-TINY-VAL` if the next move should execute anything.
+The approval should state whether the validation may write a new
+checkpoint/output directory. Without that approval, the route remains read-only
+and protocol-only.

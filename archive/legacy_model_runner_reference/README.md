@@ -2,7 +2,7 @@
 
 This archive contains the old helper library, tests, reference excerpts, runner
 scripts, pytest configuration, construction plan, and the previous
-`04_ian_validation_model_runner_orchestration.ipynb` notebook that orchestrated
+`04_ian_runner_reference.ipynb` notebook that orchestrated
 the archived helper library.
 
 It is not active project code. Do not import from this archive in current

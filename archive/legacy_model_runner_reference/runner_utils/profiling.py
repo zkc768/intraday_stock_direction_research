@@ -3,7 +3,7 @@
 import numpy as np
 import pandas as pd
 
-from ml_utils.dataset import make_no_trade_band_labels
+from runner_utils.dataset import make_no_trade_band_labels
 
 
 BAR_SUMMARY_COLUMNS = [

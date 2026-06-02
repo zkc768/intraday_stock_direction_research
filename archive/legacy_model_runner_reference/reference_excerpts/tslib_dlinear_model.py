@@ -3,7 +3,7 @@
 # Commit: 4e938a1767106324dd753b2a44832bf870a0252e
 # License: MIT
 # Downloaded: 2026-05-20
-# Purpose: Reference only — not imported by ml_utils production code
+# Purpose: Reference only — not imported by runner_utils production code
 
 import torch
 import torch.nn as nn

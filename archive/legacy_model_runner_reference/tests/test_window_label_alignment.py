@@ -6,7 +6,7 @@ FEATURE_COLS = ["close"]
 
 
 def _windowed_dataset(*args, **kwargs):
-    from ml_utils.dataset import WindowedClassificationDataset
+    from runner_utils.dataset import WindowedClassificationDataset
 
     return WindowedClassificationDataset(*args, **kwargs)
 

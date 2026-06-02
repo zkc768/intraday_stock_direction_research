@@ -3,7 +3,7 @@
 # Commit: 0c113668a3b88c4c4ee586b8c5ec3e539c4de5a6
 # License: Apache-2.0
 # Downloaded: 2026-05-20
-# Purpose: Reference only — not imported by ml_utils production code
+# Purpose: Reference only — not imported by runner_utils production code
 
 import torch
 import torch.nn as nn

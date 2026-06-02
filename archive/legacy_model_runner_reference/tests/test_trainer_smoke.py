@@ -9,7 +9,7 @@ from torch.utils.data import DataLoader, TensorDataset
 
 
 def _get_trainer_api():
-    from ml_utils.trainer import Trainer, evaluate, train_one_epoch
+    from runner_utils.trainer import Trainer, evaluate, train_one_epoch
 
     return train_one_epoch, evaluate, Trainer
 

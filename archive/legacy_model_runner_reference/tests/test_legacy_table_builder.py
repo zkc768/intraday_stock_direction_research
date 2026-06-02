@@ -3,7 +3,7 @@ from pathlib import Path
 import pandas as pd
 import pytest
 
-from scripts.phase1b_local import build_paper_tables
+from scripts.local_runner_reference import build_paper_tables
 
 
 def test_build_paper_tables_writes_manuscript_tables(tmp_path):
@@ -293,7 +293,7 @@ def _write_report_inputs(input_dir):
                 "run_dir": str(diagnostic_0bps_run_dir),
                 "run_id": "diagnostic_0bps",
                 "label_mode": "no_trade_band",
-                "label_semantics": "phase1b_no_trade_band_diagnostic",
+                "label_semantics": "legacy_runner_no_trade_band_diagnostic",
                 "zero_return_policy": "neutral_nan",
                 "no_trade_band_enabled": True,
                 "neutral_policy": "abs(future_avg_r) <= threshold_bps is NaN/skipped",
@@ -312,7 +312,7 @@ def _write_report_inputs(input_dir):
                 "run_dir": str(diagnostic_5bps_run_dir),
                 "run_id": "diagnostic_5bps",
                 "label_mode": "no_trade_band",
-                "label_semantics": "phase1b_no_trade_band_diagnostic",
+                "label_semantics": "legacy_runner_no_trade_band_diagnostic",
                 "zero_return_policy": "neutral_nan",
                 "no_trade_band_enabled": True,
                 "neutral_policy": "abs(future_avg_r) <= threshold_bps is NaN/skipped",
@@ -335,8 +335,8 @@ def _write_report_inputs(input_dir):
             _pooled_row("canonical_run", "canonical_phase1_full_binary", 0.0, "dlinear", 0.476766, -0.023092, 0.847315),
             _pooled_row("canonical_run", "canonical_phase1_full_binary", 0.0, "lstm", 0.484279, -0.015578, 0.847315),
             _pooled_row("canonical_run", "canonical_phase1_full_binary", 0.0, "tcn", 0.497540, -0.002318, 0.847315),
-            _pooled_row("diagnostic_0bps", "phase1b_no_trade_band_diagnostic", 0.0, "tcn", 0.504747, 0.004890, 0.847309),
-            _pooled_row("diagnostic_5bps", "phase1b_no_trade_band_diagnostic", 5.0, "lstm", 0.499939, 0.001893, 0.149115),
+            _pooled_row("diagnostic_0bps", "legacy_runner_no_trade_band_diagnostic", 0.0, "tcn", 0.504747, 0.004890, 0.847309),
+            _pooled_row("diagnostic_5bps", "legacy_runner_no_trade_band_diagnostic", 5.0, "lstm", 0.499939, 0.001893, 0.149115),
         ]
     ).to_csv(input_dir / "pooled_by_model.csv", index=False)
 
@@ -346,12 +346,12 @@ def _write_report_inputs(input_dir):
             _ticker_row("canonical_run", "canonical_phase1_full_binary", 0.0, "lstm", "JPM", -0.043262),
             _ticker_row("canonical_run", "canonical_phase1_full_binary", 0.0, "tcn", "CSCO", -0.032842),
             _ticker_row("canonical_run", "canonical_phase1_full_binary", 0.0, "tcn", "JPM", -0.016494),
-            _ticker_row("diagnostic_0bps", "phase1b_no_trade_band_diagnostic", 0.0, "lstm", "CSCO", 0.007889),
-            _ticker_row("diagnostic_0bps", "phase1b_no_trade_band_diagnostic", 0.0, "lstm", "JPM", -0.016661),
-            _ticker_row("diagnostic_0bps", "phase1b_no_trade_band_diagnostic", 0.0, "tcn", "CSCO", -0.010000),
-            _ticker_row("diagnostic_0bps", "phase1b_no_trade_band_diagnostic", 0.0, "tcn", "JPM", -0.020000),
-            _ticker_row("diagnostic_5bps", "phase1b_no_trade_band_diagnostic", 5.0, "lstm", "CSCO", 0.025177),
-            _ticker_row("diagnostic_5bps", "phase1b_no_trade_band_diagnostic", 5.0, "lstm", "JPM", -0.070268),
+            _ticker_row("diagnostic_0bps", "legacy_runner_no_trade_band_diagnostic", 0.0, "lstm", "CSCO", 0.007889),
+            _ticker_row("diagnostic_0bps", "legacy_runner_no_trade_band_diagnostic", 0.0, "lstm", "JPM", -0.016661),
+            _ticker_row("diagnostic_0bps", "legacy_runner_no_trade_band_diagnostic", 0.0, "tcn", "CSCO", -0.010000),
+            _ticker_row("diagnostic_0bps", "legacy_runner_no_trade_band_diagnostic", 0.0, "tcn", "JPM", -0.020000),
+            _ticker_row("diagnostic_5bps", "legacy_runner_no_trade_band_diagnostic", 5.0, "lstm", "CSCO", 0.025177),
+            _ticker_row("diagnostic_5bps", "legacy_runner_no_trade_band_diagnostic", 5.0, "lstm", "JPM", -0.070268),
         ]
     ).to_csv(input_dir / "by_model_ticker.csv", index=False)
 
@@ -360,12 +360,12 @@ def _write_report_inputs(input_dir):
             _coverage_row("canonical_run", "canonical_phase1_full_binary", 0.0, "pooled", 0.847315, 0, 13),
             _coverage_row("canonical_run", "canonical_phase1_full_binary", 0.0, "CSCO", 0.847493, 0, 5),
             _coverage_row("canonical_run", "canonical_phase1_full_binary", 0.0, "JPM", 0.847301, 0, 0),
-            _coverage_row("diagnostic_0bps", "phase1b_no_trade_band_diagnostic", 0.0, "pooled", 0.847309, 13, pd.NA),
-            _coverage_row("diagnostic_0bps", "phase1b_no_trade_band_diagnostic", 0.0, "CSCO", 0.847482, 5, pd.NA),
-            _coverage_row("diagnostic_0bps", "phase1b_no_trade_band_diagnostic", 0.0, "JPM", 0.847301, 0, pd.NA),
-            _coverage_row("diagnostic_5bps", "phase1b_no_trade_band_diagnostic", 5.0, "pooled", 0.149115, 100, pd.NA),
-            _coverage_row("diagnostic_5bps", "phase1b_no_trade_band_diagnostic", 5.0, "CSCO", 0.847493, 100, pd.NA),
-            _coverage_row("diagnostic_5bps", "phase1b_no_trade_band_diagnostic", 5.0, "JPM", 0.847301, 100, pd.NA),
+            _coverage_row("diagnostic_0bps", "legacy_runner_no_trade_band_diagnostic", 0.0, "pooled", 0.847309, 13, pd.NA),
+            _coverage_row("diagnostic_0bps", "legacy_runner_no_trade_band_diagnostic", 0.0, "CSCO", 0.847482, 5, pd.NA),
+            _coverage_row("diagnostic_0bps", "legacy_runner_no_trade_band_diagnostic", 0.0, "JPM", 0.847301, 0, pd.NA),
+            _coverage_row("diagnostic_5bps", "legacy_runner_no_trade_band_diagnostic", 5.0, "pooled", 0.149115, 100, pd.NA),
+            _coverage_row("diagnostic_5bps", "legacy_runner_no_trade_band_diagnostic", 5.0, "CSCO", 0.847493, 100, pd.NA),
+            _coverage_row("diagnostic_5bps", "legacy_runner_no_trade_band_diagnostic", 5.0, "JPM", 0.847301, 100, pd.NA),
         ]
     ).to_csv(input_dir / "coverage_by_ticker.csv", index=False)
     _write_seed_results(

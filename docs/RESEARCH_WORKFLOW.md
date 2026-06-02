@@ -35,8 +35,8 @@ Rules:
 - Put dates, detailed research questions, and conclusions inside the notebook,
   not in the filename.
 
-Existing `PM_*` notebooks may remain as historical references. Do not rename
-them until the user asks for a separate cleanup pass.
+Archived notebooks under `notebooks/archive/` are provenance only. Do not use
+them as templates for new research notebooks.
 
 ---
 
@@ -70,8 +70,8 @@ honest interpretation
 ```
 
 No extra spec, PM gate, handoff, or closeout document is needed for ordinary
-research progress. If a short running note is useful, add one line to
-`docs/log.md` after the notebook is reviewed.
+research progress. Put the research memo, experiment cards, caveats, and next
+step inside the notebook itself.
 
 ---
 

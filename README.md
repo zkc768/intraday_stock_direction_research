@@ -6,12 +6,14 @@ Default entry points:
 
 - `AGENTS.md` — project rules and hard research-validity constraints.
 - `docs/RESEARCH_WORKFLOW.md` — notebook-first experiment workflow.
+- `notebooks/04_ian_validation.ipynb` — current active research notebook.
 - `docs/ENVIRONMENT.md` — local Python interpreter and environment notes.
 
 Useful references:
 
 - `docs/MENTOR_CLEAN_V1_PROTOCOL_LOCK_2026-05-30.md` records the current mentor-aligned baseline protocol.
-- `docs/ml_utils_construction_plan_v2.md` is retained for future `ml_utils` implementation work only; it is not the default research workflow.
+- `docs/ml_utils_construction_plan_v2.md` is a historical `ml_utils` reference only; it is not the default research workflow.
 - Historical `PM_*`, `PHASE_1B_*`, route-control, handoff, and prompt-operation documents were removed from the working tree as tracked history. Recover them from git history if a historical audit is needed.
+- Notebooks `00` through `03` were moved to `notebooks/archive/legacy_phase1b/`; they are not active templates.
 
 Current working style: one clear validation-only research notebook at a time, with chronological splits, train-only preprocessing, split-boundary label invalidation, dummy-baseline comparison, and explicit result scope.

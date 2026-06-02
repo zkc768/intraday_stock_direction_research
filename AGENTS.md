@@ -69,8 +69,8 @@ Examples:
 ```
 
 Do not use question sentences or routine `PM_###` names for new research
-notebooks. Existing `PM_*` notebooks are historical references, not naming
-templates.
+notebooks. Existing `PM_*` notebooks and anything under `notebooks/archive/`
+are historical references, not naming templates or active examples.
 
 ---
 

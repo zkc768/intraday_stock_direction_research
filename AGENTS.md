@@ -27,8 +27,9 @@
   protocol is trustworthy.
 - **Working style**: one research question at a time; one readable notebook per
   experiment; no extra process documents unless the user asks.
-- **Role of `ml_utils/`**: a small helper library. Import stable pieces from it;
-  do not expand or rewrite it during ordinary notebook exploration.
+- **Role of archived `ml_utils/`**: historical reference only. Do not import it
+  in active notebooks unless the user explicitly asks for historical
+  reproduction or a new helper-library rebuild.
 
 ---
 
@@ -51,7 +52,8 @@ honest interpretation
 ```
 
 Notebook code may be inline when that makes the analysis easier to read. Reused
-logic only moves into `ml_utils/` after it has stabilized and needs tests.
+logic can become a new helper only after the notebook evidence and test boundary
+are clear.
 
 New notebook names should be short, sortable, and snake_case:
 
@@ -175,10 +177,9 @@ resume them as default research workflow.
 
 - Do not create new `PM_NNN_*`, handoff, readiness, session-context, or
   closeout documents for ordinary research progress.
-- Do not expand the CLI runner for new exploration. Old CLI scripts are
-  historical reproduction tools, not the default path for new experiments.
-- Do not test-first notebook exploration. Tests belong to stable `ml_utils`
-  functions that protect labels, windows, leakage, or metrics.
+- Do not expand or restore archived CLI runners for new exploration.
+- Do not test-first notebook exploration. Tests belong only to rebuilt stable
+  helpers, not to ordinary memo notebooks.
 - Do not build backend scaffolding for one-off analysis. Start in the notebook;
   extract to the library only after reuse is clear.
 - Do not add plugin, hook, registry, callback, abstract-base-class, or

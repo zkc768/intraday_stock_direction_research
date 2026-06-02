@@ -41,9 +41,10 @@ remove non-stationary raw OHLCV/raw volume/raw MACD, use normalized and
 decision-time-safe features, keep the no-trade band, and rerun LightGBM plus
 MS-DLinear+TCN only when those routes are real and fair.
 
-Current code state:
+Historical code state:
 
-- `mentor_clean_v1` exists in `scripts/phase1b_local/local_baseline_matrix.py`.
+- `mentor_clean_v1` existed in
+  `archive/legacy_ml_utils_reference/scripts/phase1b_local/local_baseline_matrix.py`.
 - The runner's `resolve_feature_set(...)` defaults to `mentor_clean_v1`.
 - The runner supports torch `lstm`, `tcn`, and `dlinear`, plus a separate
   validation/report path for `sklearn_logreg`.
@@ -154,8 +155,10 @@ test/holdout access.
 
 LightGBM decision: blocked.
 
-Reason: no current LightGBM runner/model path was found in the targeted
-`scripts/phase1b_local`, `ml_utils/models`, and `tests` search. The
+Reason: no LightGBM runner/model path was found in the historical
+`archive/legacy_ml_utils_reference/scripts/phase1b_local`,
+`archive/legacy_ml_utils_reference/ml_utils/models`, and
+`archive/legacy_ml_utils_reference/tests` search. The
 `sklearn_logreg` validation-only path can be used as a tiny sanity baseline, but
 it must not be renamed or reported as LightGBM.
 
@@ -218,7 +221,8 @@ protocol.
 
 Allowed files/actions:
 - Read hf_stock_clf/AGENTS.md and docs/MENTOR_CLEAN_V1_PROTOCOL_LOCK_2026-05-30.md.
-- Run --help or inspect argparse for scripts/phase1b_local/local_baseline_matrix.py.
+- For historical reconstruction only, inspect argparse in
+  `archive/legacy_ml_utils_reference/scripts/phase1b_local/local_baseline_matrix.py`.
 - Run at most one existing sklearn_logreg validation-only smoke if CLI flags
   confirm support.
 - Write only to a new, clearly named validation output directory under

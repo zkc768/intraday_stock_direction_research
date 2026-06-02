@@ -268,11 +268,12 @@ Weak/mixed results should be described as weak/mixed.
 
 ## 5. When To Touch Other Project Areas
 
-- **`ml_utils/`**: touch only when a function is stable, reused across notebooks,
-  and worth testing.
-- **Tests**: write tests for reusable leakage, label, window, or metric helpers;
-  do not test-first ordinary notebook exploration.
-- **CLI scripts**: treat old scripts as historical reproduction tools. New
-  research defaults to notebooks.
+- **Archived helpers**: old `ml_utils`, tests, reference excerpts, and CLI
+  scripts live under `archive/legacy_ml_utils_reference/`. They are historical
+  reference only.
+- **New helpers**: rebuild a helper only after a notebook proves the logic is
+  reused, safety-critical, and testable.
+- **Tests**: write tests only for rebuilt reusable leakage, label, window, or
+  metric helpers; do not test ordinary notebook cells.
 - **Historical docs**: `PM_*`, `PHASE_1B_*`, transfer, manifest, route-control,
   and goal-mode docs are archive material. Do not scan or update them by default.

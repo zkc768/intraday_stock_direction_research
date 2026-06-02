@@ -13,3 +13,13 @@ __pycache__/
 
 .DS_Store
 Thumbs.db
+
+*.h5
+*.log
+*.parquet
+*.pt
+*.pth
+mlruns/
+output/
+results/
+wandb/

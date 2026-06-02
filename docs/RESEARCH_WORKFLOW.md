@@ -144,16 +144,12 @@ horizon reaches into the next split must be invalidated.
 Core label idea:
 
 ```python
-future_returns = [
-    df["close"].pct_change().shift(-1).shift(-i)
-    for i in range(K)
-]
-future_avg = pd.concat(future_returns, axis=1).mean(axis=1, skipna=False)
+future_cumulative_return = df["close"].shift(-K) / df["close"] - 1.0
 
 threshold = THRESHOLD_BPS / 10_000
 label = pd.Series(np.nan, index=df.index)
-label[future_avg > threshold] = 1.0
-label[future_avg < -threshold] = 0.0
+label[future_cumulative_return > threshold] = 1.0
+label[future_cumulative_return < -threshold] = 0.0
 ```
 
 Trading-day horizon invalidation:
@@ -161,7 +157,7 @@ Trading-day horizon invalidation:
 ```python
 dates = df["timestamp"].dt.date
 crosses_day = dates != dates.shift(-K)
-label[future_avg.notna() & crosses_day] = np.nan
+label[future_cumulative_return.notna() & crosses_day] = np.nan
 ```
 
 Split-boundary invalidation:
@@ -170,7 +166,7 @@ Split-boundary invalidation:
 split_name = assign_split(df["timestamp"])
 horizon_split = split_name.shift(-K)
 crosses_split = split_name != horizon_split
-label[future_avg.notna() & crosses_split] = np.nan
+label[future_cumulative_return.notna() & crosses_split] = np.nan
 ```
 
 The exact implementation can differ, but the rule cannot: labels whose horizon

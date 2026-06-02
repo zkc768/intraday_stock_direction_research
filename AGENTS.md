@@ -106,7 +106,7 @@ before continuing.
 
 1. Model choice, thresholds, feature changes, and hyperparameters use train plus
    validation only.
-2. The final holdout/test has already been opened once for this research route
+2. The final holdout/test has already been opened once for this research line
    and is now closed. Reopening holdout/test requires a pre-registered note that
    states the exact model, metric, and decision rule before looking.
 3. After holdout/test is viewed, do not change features, labels, thresholds,
@@ -147,7 +147,7 @@ The current reproducible baseline is:
 | Feature set | `baseline_v1`: log_return, close_to_open_return, high_low_range, rolling_volatility_20, normalized_volume_20, rsi_14, bollinger_pctb, normalized_macd_hist, time_of_day_sin/cos |
 | Label | no-trade band, threshold = 5 bps, horizon k = 12 |
 | Window | window_size = 12, decision after current bar close |
-| Split | calendar train/validation/holdout intervals already used in prior route work |
+| Split | calendar train/validation/holdout intervals already used in prior baseline work |
 | Stocks | CSCO, JPM, KO, MSFT, WMT |
 | Models | LightGBM and MS-DLinear+TCN |
 

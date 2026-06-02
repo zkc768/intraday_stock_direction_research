@@ -6,19 +6,19 @@ Status: baseline reference only
 ## Current Baseline
 
 This file records the current baseline setup and the research-safety boundaries
-around it. Some route-readiness notes below are historical because the old
-model runner has since been archived.
+around it. Some implementation-readiness notes below are historical because the
+old model runner has since been archived.
 
 Current baseline state:
 
 - `baseline_v1`, `no_trade_band`, explicit fixed `threshold_bps=5.0`,
   `post_bar_close_completed_bar`, and pooled train-only scaling after
   per-ticker chronological split remain the default baseline.
-- The prior LightGBM route record is diagnostic/setup observability only, not
+- The prior LightGBM record is diagnostic/setup observability only, not
   model-performance evidence and not permission to tune or open test/holdout.
 - Combined MS-DLinear+TCN existed as a canonical archived helper-library model
-  and runner
-  route, but any smoke must stay tiny, train-on-train, validation-only, and
+  and runner implementation, but any smoke must stay tiny, train-on-train,
+  validation-only, and
   test/holdout-embargoed.
 - "Ready" in the feature table below means post-bar-close feature availability
   under this baseline only; it is not experiment readiness, model
@@ -38,7 +38,7 @@ Ian's latest direction says the current 5-minute technical indicators look
 weak and the next work should clean features and check selective prediction:
 remove non-stationary raw OHLCV/raw volume/raw MACD, use normalized and
 decision-time-safe features, keep the no-trade band, and rerun LightGBM plus
-MS-DLinear+TCN only when those routes are real and fair.
+MS-DLinear+TCN only when those implementations are real and fair.
 
 Historical code state:
 
@@ -47,10 +47,12 @@ Historical code state:
 - The runner's `resolve_feature_set(...)` defaults to `baseline_v1`.
 - The runner supports torch `lstm`, `tcn`, and `dlinear`, plus a separate
   validation/report path for `sklearn_logreg`.
-- No current LightGBM runner or model path was found in the targeted runner,
-  model, and test search.
-- No current combined MS-DLinear+TCN model path was found in the targeted
-  runner, model, and test search.
+- Archived references include LightGBM validation-only logic, but no active
+  notebook adapter is approved by default. Use requires migration audit and
+  separate validation preregistration.
+- Archived references include MS-DLinear+TCN model/test material, but no active
+  notebook path is approved by default. Use requires shape/spec audit before
+  validation use.
 - The current scaler is fit on the concatenated training frames after
   chronological per-ticker splitting, then applied to train/validation/test.
 
@@ -75,7 +77,7 @@ Forbidden for this reference:
 - Running training, notebooks, full baselines, Colab jobs, or paper-table
   regeneration.
 - Re-labeling `sklearn_logreg` as LightGBM.
-- Treating a notebook prototype as the canonical MS-DLinear+TCN route.
+- Treating a notebook prototype as the canonical MS-DLinear+TCN implementation.
 - Selecting thresholds or features from test performance.
 
 ## Decision-Time Convention
@@ -96,13 +98,13 @@ reference is not sufficient.
 | `log_return` | `log(close[t]) - log(close[t-1])` | Available only after `close[t]` is known. | Grouped by ticker and trading day when ticker exists. First bar per group drops. | Ready under post-bar-close convention; lag if pre-close. |
 | `close_to_open_return` | `close[t] / open[t] - 1` | Uses current bar close; unavailable before bar close. | No rolling warmup. | Ready only under post-bar-close convention. |
 | `high_low_range` | `log(high[t] / low[t])` | Uses current bar high/low; unavailable before bar close. | No rolling warmup. | Ready only under post-bar-close convention. |
-| `rolling_volatility_20` | Rolling 20-bar std of `log_return` through current row. | Available after the current bar return is known. | Grouped by ticker/day; first 20 valid-return rows drop. | Ready under post-bar-close convention; specify whether current row inclusion is desired before production. |
-| `normalized_volume_20` | `log1p(volume[t]) - rolling_mean_20(log1p(volume))` through current row. | Uses current volume and a rolling mean that includes current row. | Grouped by ticker/day; first 20 rows drop. | Completed-bar only; if strict prior-only normalization is required, shift the rolling mean in a future approved patch. |
+| `rolling_volatility_20` | Prior 20-bar std of `log_return`, grouped by ticker/day. | Available after the current bar return is known, but the statistic excludes the current row. | Prior-only shift means first valid value is at 0-based bar 21 in a full trading day. | Revised after critical review to avoid current-row self-reference; this intentionally costs one extra warmup bar. |
+| `normalized_volume_20` | `log1p(volume[t]) - prior_rolling_mean_20(log1p(volume))`. | Uses current completed volume against a same-day prior-only baseline. | Prior-only shift means first valid value is at 0-based bar 20 in a full trading day. | Revised after critical review to avoid current-row self-reference and previous-day carryover; this intentionally costs one extra warmup bar. |
 | `rsi_14` | Rolling 14-bar average gain/loss from close differences. | Uses close history through current completed bar. | Grouped by ticker/day; warmup rows drop. | Ready under post-bar-close convention. |
-| `bollinger_pctb` | Current close relative to rolling Bollinger mean/std. | Uses current completed close and trailing window. | Grouped by ticker/day; warmup rows drop. | Ready under post-bar-close convention. |
-| `normalized_macd_hist` | MACD histogram computed from close EMA history and normalized by current close. | Uses close history through current completed bar. | Grouped by ticker/day. | Ready for v1; record formula and do not overclaim stationarity. |
-| `time_of_day_sin` | Sine transform of timestamp minute of day. | Known before and after the bar. | No warmup. | Ready. |
-| `time_of_day_cos` | Cosine transform of timestamp minute of day. | Known before and after the bar. | No warmup. | Ready. |
+| `bollinger_pctb` | Current close relative to rolling Bollinger mean/std. | Uses current completed close and trailing window. | Grouped by ticker/day; warmup and zero-width-band rows are invalid. | Revised after critical review to avoid infinite values. |
+| `normalized_macd_hist` | MACD histogram computed from close EMA history and normalized by EMA-26. | Uses close history through current completed bar. | Grouped by ticker/day. | Revised after critical review to reduce price-level scaling artifacts; do not overclaim stationarity. |
+| `time_of_day_sin` | Sine transform of minutes since regular-market open over a 390-minute session. | Known before and after the bar. | No warmup. | Revised after critical review to encode trading-session phase rather than a 24-hour clock. |
+| `time_of_day_cos` | Cosine transform of minutes since regular-market open over a 390-minute session. | Known before and after the bar. | No warmup. | Revised after critical review to encode trading-session phase rather than a 24-hour clock. |
 
 Feature set:
 
@@ -110,7 +112,7 @@ Feature set:
 - `feature_view = sequence` for torch baselines unless the next prompt
   explicitly uses the validation-only `sklearn_logreg` tabular path.
 - `technical_v1` is allowed only as a historical control, not as the mentor
-  clean route.
+  clean baseline.
 
 ## Scaler And Threshold Policy
 
@@ -151,26 +153,30 @@ The notes in this section explain what the archived runner can and cannot do.
 They do not authorize runtime, model selection, evidence promotion, or
 test/holdout access.
 
-LightGBM: not active.
+LightGBM: archived reference only; active migration audit required before
+validation use.
 
-Reason: no LightGBM runner/model path was found in the historical
-archived runner scripts, archived helper-library model files, and archived
-tests. The
-`sklearn_logreg` validation-only path can be used as a tiny sanity baseline, but
-it must not be renamed or reported as LightGBM.
+Reason: archive material contains LightGBM validation-only references, and the
+current notebook may run bounded LightGBM diagnostics when explicitly approved.
+That does not make LightGBM a selected model or evidence-ready path. Smoke
+values are pipeline diagnostics only. The `sklearn_logreg` validation-only path
+can be used as a tiny sanity baseline, but it must not be renamed or reported as
+LightGBM.
 
 Minimum next task:
 
-- Add or approve a tiny LightGBM adapter/runner path, with dependency and
-  artifact policy stated up front; or explicitly defer LightGBM and run only
-  the existing `sklearn_logreg` validation-only sanity check.
+- Audit and approve a tiny LightGBM notebook adapter or runner path, with
+  dependency, artifact, and validation preregistration policy stated up front;
+  or explicitly defer LightGBM and run only the existing `sklearn_logreg`
+  validation-only sanity check.
 
-MS-DLinear+TCN: not active.
+MS-DLinear+TCN: archived model/tests reference only; active shape/spec audit
+required before validation use.
 
-Reason: the current canonical runner supports separate `dlinear` and `tcn`
-models, but no formal combined MS-DLinear+TCN implementation path was found in
-the targeted runner/model/test search. The untracked notebook route is not a
-canonical implementation until separately reviewed, cleaned, and promoted.
+Reason: archive material contains combined-model references and related tests,
+while the active notebook path still needs an explicit shape/spec and migration
+audit. No archived or prototype implementation becomes canonical until
+separately reviewed, cleaned, and promoted.
 
 Minimum next task:
 
@@ -181,7 +187,7 @@ Minimum next task:
 
 Step 1: Baseline check.
 
-- Confirm this baseline reference is the active route.
+- Confirm this baseline reference is the active baseline reference.
 - Confirm the decision-time convention is post-bar-close.
 - Confirm `threshold_bps = 5.0` is fixed and pre-registered.
 - Stop if the user wants pre-close prediction, a different threshold policy, or
@@ -189,16 +195,17 @@ Step 1: Baseline check.
 
 Step 2: Tiny validation-only smoke.
 
-- Use only existing runner paths.
-- Prefer `sklearn_logreg` validation-only reporting as a cheap leak/check smoke,
-  because LightGBM and combined MS-DLinear+TCN are not active.
+- Use only existing approved notebook or runner paths.
+- Prefer the cheapest validation-only smoke that checks leakage and split
+  mechanics. `sklearn_logreg` remains an optional sanity baseline; LightGBM or
+  MS-DLinear+TCN smoke requires the relevant migration/audit boundary first.
 - Do not run torch training unless separately approved.
 - Stop on missing raw data, unsupported CLI flags, class collapse, split/scaler
   policy mismatch, or any attempt to inspect test metrics for selection.
 
 Step 3: Implementation review.
 
-- If tiny validation passes, choose one route to prepare:
+- If tiny validation passes, choose one implementation path to prepare:
   LightGBM adapter or combined MS-DLinear+TCN model spec.
 - Add tests before training.
 - Keep paper/evidence-matrix updates paused until real validation artifacts
@@ -266,5 +273,5 @@ Final report:
 
 Approve only `BASELINE-TINY-VAL` if the next move should execute anything.
 The approval should state whether the validation may write a new
-checkpoint/output directory. Without that approval, the route remains read-only
-and reference-only.
+checkpoint/output directory. Without that approval, the baseline remains
+read-only and reference-only.

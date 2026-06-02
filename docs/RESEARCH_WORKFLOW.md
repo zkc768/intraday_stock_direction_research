@@ -229,7 +229,8 @@ Model work is validation-only unless the user explicitly authorizes a
 pre-registered holdout/test run.
 
 - LightGBM can use a last-step feature view.
-- MS-DLinear+TCN can use full windows.
+- MS-DLinear+TCN can use full windows only after an active adapter/spec task is
+  approved; archived references alone are not an active model path.
 - Save probabilities if selective/no-trade analysis is relevant.
 - Do not tune on holdout/test.
 

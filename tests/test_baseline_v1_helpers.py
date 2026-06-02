@@ -74,6 +74,33 @@ def test_no_trade_band_marks_near_zero_returns_invalid_not_classed():
     assert set(labeled["label"].dropna().unique()).issubset({0, 1})
 
 
+def test_no_trade_label_audits_irregular_same_day_positional_horizon():
+    frame = pd.DataFrame(
+        {
+            "ticker": ["AAA"] * 4,
+            "timestamp": pd.to_datetime(
+                [
+                    "2020-01-01 09:30",
+                    "2020-01-01 09:35",
+                    "2020-01-01 09:45",
+                    "2020-01-01 09:50",
+                ]
+            ),
+            "open": [100.0, 100.5, 101.0, 101.5],
+            "high": [101.0, 101.5, 102.0, 102.5],
+            "low": [99.0, 99.5, 100.0, 100.5],
+            "close": [100.0, 100.5, 101.0, 101.5],
+            "volume": [1000, 1100, 1200, 1300],
+        }
+    )
+
+    labeled = make_no_trade_band_labels(frame, horizon_k=2, threshold_bps=0.0)
+
+    assert bool(labeled.loc[0, "diagnostic_irregular_horizon"])
+    assert labeled.loc[0, "future_horizon_minutes"] == pytest.approx(15.0)
+    assert not bool(labeled.loc[0, "invalid_cross_day"])
+
+
 def test_no_trade_label_rejects_pooled_multi_ticker_frame():
     first = make_one_ticker_frame().head(3)
     second = first.copy()
@@ -201,6 +228,90 @@ def test_feature_construction_time_encoding_uses_regular_session_phase():
 
     assert featured.loc[0, "time_of_day_sin"] == pytest.approx(0.0)
     assert featured.loc[0, "time_of_day_cos"] == pytest.approx(1.0)
+
+
+def test_feature_construction_time_encoding_does_not_wrap_close_to_open():
+    frame = pd.DataFrame(
+        {
+            "ticker": ["AAA", "AAA"],
+            "timestamp": pd.to_datetime(["2020-01-01 09:30", "2020-01-01 16:00"]),
+            "open": [100.0, 101.0],
+            "high": [101.0, 102.0],
+            "low": [99.0, 100.0],
+            "close": [100.5, 101.5],
+            "volume": [1000, 1100],
+        }
+    )
+
+    featured = add_baseline_v1_features(frame)
+
+    open_point = featured.loc[0, ["time_of_day_sin", "time_of_day_cos"]].to_numpy(
+        dtype=float
+    )
+    close_point = featured.loc[1, ["time_of_day_sin", "time_of_day_cos"]].to_numpy(
+        dtype=float
+    )
+    assert not np.allclose(open_point, close_point)
+
+
+def test_feature_construction_rsi_uses_wilder_alpha():
+    frame = pd.DataFrame(
+        {
+            "ticker": ["AAA"] * 30,
+            "timestamp": pd.date_range("2020-01-01 09:30", periods=30, freq="5min"),
+            "open": np.linspace(100.0, 104.0, 30),
+            "high": np.linspace(100.5, 104.5, 30),
+            "low": np.linspace(99.5, 103.5, 30),
+            "close": [
+                100.0,
+                101.0,
+                100.5,
+                102.0,
+                101.2,
+                102.5,
+                103.0,
+                102.6,
+                103.4,
+                104.0,
+                103.6,
+                104.2,
+                104.8,
+                104.1,
+                105.0,
+                105.4,
+                104.9,
+                105.6,
+                106.0,
+                105.5,
+                106.4,
+                106.8,
+                106.2,
+                107.0,
+                107.5,
+                107.1,
+                107.9,
+                108.2,
+                107.7,
+                108.5,
+            ],
+            "volume": np.arange(100, 130),
+        }
+    )
+
+    featured = add_baseline_v1_features(frame)
+    close_delta = frame["close"].diff()
+    gain = close_delta.clip(lower=0.0)
+    loss = (-close_delta).clip(lower=0.0)
+    avg_gain = gain.ewm(alpha=1.0 / 14, adjust=False, min_periods=14).mean()
+    avg_loss = loss.ewm(alpha=1.0 / 14, adjust=False, min_periods=14).mean()
+    expected = 100.0 - (100.0 / (1.0 + avg_gain / avg_loss.replace(0.0, np.nan)))
+    expected = expected.mask(avg_loss.eq(0.0) & avg_gain.gt(0.0), 100.0)
+    expected = expected.mask(avg_loss.eq(0.0) & avg_gain.eq(0.0), 50.0)
+
+    valid = expected.notna()
+    assert featured.loc[valid, "rsi_14"].tolist() == pytest.approx(
+        expected.loc[valid].tolist()
+    )
 
 
 def test_feature_construction_marks_zero_bollinger_width_invalid():

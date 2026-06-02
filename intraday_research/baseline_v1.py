@@ -13,6 +13,8 @@ from sklearn.preprocessing import StandardScaler
 BPS_TO_DECIMAL = 10000.0
 MARKET_OPEN_MINUTE = 9 * 60 + 30
 TRADING_DAY_MINUTES = 390
+BAR_INTERVAL_MINUTES = 5
+TIME_OF_DAY_ENCODING_PERIOD_MINUTES = TRADING_DAY_MINUTES + BAR_INTERVAL_MINUTES
 
 
 def _require_single_ticker_frame(frame):
@@ -62,6 +64,17 @@ def grouped_ewm(series, group_key, span):
     )
 
 
+def grouped_wilder_ewm(series, group_key, period):
+    period = _positive_int(period, "period")
+    return series.groupby(group_key, group_keys=False).apply(
+        lambda part: part.ewm(
+            alpha=1.0 / period,
+            adjust=False,
+            min_periods=period,
+        ).mean()
+    )
+
+
 def add_baseline_v1_features(frame):
     _require_single_ticker_frame(frame)
     current = frame.sort_values("timestamp").copy()
@@ -87,8 +100,8 @@ def add_baseline_v1_features(frame):
     close_delta = close.groupby(day, group_keys=False).diff()
     gain = close_delta.clip(lower=0.0)
     loss = (-close_delta).clip(lower=0.0)
-    avg_gain = grouped_ewm(gain, day, 14)
-    avg_loss = grouped_ewm(loss, day, 14)
+    avg_gain = grouped_wilder_ewm(gain, day, 14)
+    avg_loss = grouped_wilder_ewm(loss, day, 14)
     rs = avg_gain / avg_loss.replace(0.0, np.nan)
     rsi = 100.0 - (100.0 / (1.0 + rs))
     rsi = rsi.mask(avg_loss.eq(0.0) & avg_gain.gt(0.0), 100.0)
@@ -111,10 +124,10 @@ def add_baseline_v1_features(frame):
     minute_of_day = current["timestamp"].dt.hour * 60 + current["timestamp"].dt.minute
     minutes_since_open = minute_of_day - MARKET_OPEN_MINUTE
     current["time_of_day_sin"] = np.sin(
-        2.0 * np.pi * minutes_since_open / TRADING_DAY_MINUTES
+        2.0 * np.pi * minutes_since_open / TIME_OF_DAY_ENCODING_PERIOD_MINUTES
     )
     current["time_of_day_cos"] = np.cos(
-        2.0 * np.pi * minutes_since_open / TRADING_DAY_MINUTES
+        2.0 * np.pi * minutes_since_open / TIME_OF_DAY_ENCODING_PERIOD_MINUTES
     )
     return current
 
@@ -126,6 +139,7 @@ def make_no_trade_band_labels(frame, horizon_k, threshold_bps):
     threshold = threshold_bps / BPS_TO_DECIMAL
 
     close = current["close"].astype(float)
+    future_timestamp = current["timestamp"].shift(-horizon_k)
     current["future_cumulative_return"] = close.shift(-horizon_k) / close - 1.0
 
     same_day = pd.Series(True, index=current.index)
@@ -133,6 +147,14 @@ def make_no_trade_band_labels(frame, horizon_k, threshold_bps):
     for offset in range(1, horizon_k + 1):
         same_day &= current_day.shift(-offset).eq(current_day)
 
+    actual_horizon = future_timestamp - current["timestamp"]
+    expected_horizon = pd.Timedelta(minutes=BAR_INTERVAL_MINUTES * horizon_k)
+    current["future_horizon_minutes"] = (
+        actual_horizon.dt.total_seconds() / 60.0
+    )
+    current["diagnostic_irregular_horizon"] = (
+        future_timestamp.notna() & same_day & actual_horizon.ne(expected_horizon)
+    )
     current["invalid_missing_future"] = current["future_cumulative_return"].isna()
     current["invalid_cross_day"] = ~same_day
     current["label"] = np.nan

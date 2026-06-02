@@ -149,7 +149,7 @@ The current reproducible baseline is:
 | Window | window_size = 12, decision after current bar close |
 | Split | calendar train/validation/holdout intervals already used in prior baseline work |
 | Stocks | CSCO, JPM, KO, MSFT, WMT |
-| Models | LightGBM and MS-DLinear+TCN |
+| Models | sklearn_logreg diagnostic and LightGBM tiny adapter; MS-DLinear+TCN is archived/spec-only until an active adapter is approved |
 
 These defaults are not a ban on research. Other features, windows, thresholds,
 models, or stock scopes may be explored if the notebook states what changed and

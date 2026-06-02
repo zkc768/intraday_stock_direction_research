@@ -16,10 +16,11 @@ Current baseline state:
   per-ticker chronological split remain the default baseline.
 - The prior LightGBM record is diagnostic/setup observability only, not
   model-performance evidence and not permission to tune or open test/holdout.
-- Combined MS-DLinear+TCN existed as a canonical archived helper-library model
-  and runner implementation, but any smoke must stay tiny, train-on-train,
-  validation-only, and
-  test/holdout-embargoed.
+- `sklearn_logreg` is the dependency-free active diagnostic model path.
+- LightGBM is declared as an optional active tiny adapter dependency and remains
+  validation-only diagnostic, not model-performance evidence.
+- Combined MS-DLinear+TCN exists only as archived helper-library reference until
+  a separate active adapter/spec task is approved.
 - "Ready" in the feature table below means post-bar-close feature availability
   under this baseline only; it is not experiment readiness, model
   evidence, or test/holdout authorization.
@@ -40,19 +41,19 @@ remove non-stationary raw OHLCV/raw volume/raw MACD, use normalized and
 decision-time-safe features, keep the no-trade band, and rerun LightGBM plus
 MS-DLinear+TCN only when those implementations are real and fair.
 
-Historical code state:
+Active code state:
 
-- `baseline_v1` existed in
-  `archive/legacy_model_runner_reference/scripts/local_runner_reference/local_baseline_matrix.py`.
-- The runner's `resolve_feature_set(...)` defaults to `baseline_v1`.
-- The runner supports torch `lstm`, `tcn`, and `dlinear`, plus a separate
-  validation/report path for `sklearn_logreg`.
-- Archived references include LightGBM validation-only logic, but no active
-  notebook adapter is approved by default. Use requires migration audit and
-  separate validation preregistration.
-- Archived references include MS-DLinear+TCN model/test material, but no active
-  notebook path is approved by default. Use requires shape/spec audit before
-  validation use.
+- `intraday_research/baseline_v1.py` defines the active `baseline_v1` feature,
+  label, split-boundary, scaler, window, and dummy-baseline helper contracts.
+- `intraday_research/validation_pipeline.py` defines the active validation-only
+  report builder, dependency-free `sklearn_logreg` diagnostic, LightGBM tiny
+  adapter precheck/result, feature diagnostics, and walk-forward contract specs.
+- `scripts/run_validation_only_pipeline_smoke.py` is the active CLI smoke entry
+  point. It prints a validation-only report and must not be treated as a
+  research-result claim without artifact review.
+- Archived references contain old runner and model material, but archive paths
+  are not active execution paths unless the user explicitly asks for historical
+  reconstruction.
 - The current scaler is fit on the concatenated training frames after
   chronological per-ticker splitting, then applied to train/validation/test.
 
@@ -149,26 +150,28 @@ Threshold policy:
 
 ## Model Availability
 
-The notes in this section explain what the archived runner can and cannot do.
-They do not authorize runtime, model selection, evidence promotion, or
-test/holdout access.
+The notes in this section explain active diagnostic paths and archived model
+references. They do not authorize runtime, model selection, evidence promotion,
+or test/holdout access.
 
-LightGBM: archived reference only; active migration audit required before
-validation use.
+sklearn_logreg: active dependency-free validation-only diagnostic.
 
-Reason: archive material contains LightGBM validation-only references, and the
-current notebook may run bounded LightGBM diagnostics when explicitly approved.
-That does not make LightGBM a selected model or evidence-ready path. Smoke
-values are pipeline diagnostics only. The `sklearn_logreg` validation-only path
-can be used as a tiny sanity baseline, but it must not be renamed or reported as
-LightGBM.
+Reason: it is cheap, available through scikit-learn, and useful as a sanity
+check. It is not a sequence model and must not be described as using the full
+12-step window.
+
+LightGBM: active tiny adapter dependency, validation-only diagnostic.
+
+Reason: `requirements.txt` declares LightGBM and the active pipeline prechecks
+the dependency before running the tiny adapter. That does not make LightGBM a
+selected model or evidence-ready path. Smoke values are pipeline diagnostics
+only.
 
 Minimum next task:
 
-- Audit and approve a tiny LightGBM notebook adapter or runner path, with
-  dependency, artifact, and validation preregistration policy stated up front;
-  or explicitly defer LightGBM and run only the existing `sklearn_logreg`
-  validation-only sanity check.
+- If execution is approved, run the active validation-only smoke script with
+  explicit metadata and review the resulting report before making any research
+  statement.
 
 MS-DLinear+TCN: archived model/tests reference only; active shape/spec audit
 required before validation use.
@@ -206,7 +209,7 @@ Step 2: Tiny validation-only smoke.
 Step 3: Implementation review.
 
 - If tiny validation passes, choose one implementation path to prepare:
-  LightGBM adapter or combined MS-DLinear+TCN model spec.
+  LightGBM adapter review or combined MS-DLinear+TCN model spec.
 - Add tests before training.
 - Keep paper/evidence-matrix updates paused until real validation artifacts
   exist and are reviewed.
@@ -225,19 +228,17 @@ baseline.
 
 Allowed files/actions:
 - Read intraday_stock_direction_research/AGENTS.md and docs/BASELINE_REFERENCE.md.
-- For historical reconstruction only, inspect argparse in
-  `archive/legacy_model_runner_reference/scripts/local_runner_reference/local_baseline_matrix.py`.
-- Run at most one existing sklearn_logreg validation-only smoke if CLI flags
-  confirm support.
+- Run at most one active validation-only smoke through
+  `scripts/run_validation_only_pipeline_smoke.py`.
 - Write only to a new, clearly named validation output directory under
   intraday_stock_direction_research/checkpoints/baseline_v1_tiny_validation_2026-05-30/.
 
 Forbidden:
 - No archived helper-library edits.
-- No runner edits.
+- No archived runner execution.
 - No notebook execution.
 - No torch training.
-- No LightGBM claim.
+- No LightGBM evidence claim from a smoke value.
 - No combined MS-DLinear+TCN claim.
 - No evidence_matrix/wiki/Zotero update.
 - No threshold selection from test metrics.
@@ -253,7 +254,7 @@ Required baseline metadata:
 
 Stop rules:
 - Stop if required raw data path is missing.
-- Stop if CLI does not support validation-only sklearn_logreg reporting.
+- Stop if the active smoke script cannot produce validation-only metadata.
 - Stop if any command would train torch models or execute notebooks.
 - Stop if scaler fit is not train-only after chronological split.
 - Stop if output would overwrite an existing artifact directory.

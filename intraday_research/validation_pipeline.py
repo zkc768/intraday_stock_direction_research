@@ -200,11 +200,12 @@ def summarize_dummy_baseline(dummy_rows: pd.DataFrame) -> dict:
         "ticker_or_pooled": "pooled",
         "dummy_strategy": "stratified",
         "macro_f1_mean": float(dummy_rows["macro_f1"].mean()),
-        "macro_f1_std": float(dummy_rows["macro_f1"].std(ddof=0)),
+        "macro_f1_std": float(dummy_rows["macro_f1"].std(ddof=1)),
         "balanced_accuracy_mean": float(dummy_rows["balanced_accuracy"].mean()),
-        "balanced_accuracy_std": float(dummy_rows["balanced_accuracy"].std(ddof=0)),
+        "balanced_accuracy_std": float(dummy_rows["balanced_accuracy"].std(ddof=1)),
         "accuracy_mean": float(dummy_rows["accuracy"].mean()),
         "n": int(dummy_rows["validation_n"].iloc[0]),
+        "std_estimator": "sample_std_ddof_1",
         "scope": "validation_only",
     }
 
@@ -325,16 +326,30 @@ def evaluate_sklearn_logreg_last_step(
     model = LogisticRegression(
         solver="liblinear",
         max_iter=200,
+        class_weight="balanced",
         random_state=42,
     )
-    with warnings.catch_warnings():
-        warnings.filterwarnings("error", category=ConvergenceWarning)
+    with warnings.catch_warnings(record=True) as caught_warnings:
+        warnings.simplefilter("always", ConvergenceWarning)
         model.fit(x_train, y_train)
+    convergence_warnings = [
+        warning for warning in caught_warnings if issubclass(warning.category, ConvergenceWarning)
+    ]
     predictions = model.predict(x_validation)
     metrics = evaluate_predictions(y_validation, predictions)
     metrics.update(
         {
             "model": "sklearn_logreg_last_step",
+            "feature_view": "last_step_only_not_sequence",
+            "uses_full_window_sequence": False,
+            "class_weight": "balanced",
+            "converged": not convergence_warnings,
+            "fit_status": (
+                "convergence_warning" if convergence_warnings else "converged"
+            ),
+            "fit_error": (
+                str(convergence_warnings[0].message) if convergence_warnings else None
+            ),
             "ticker_or_pooled": "pooled",
             "train_n": int(len(y_train)),
             "validation_n": int(len(y_validation)),
@@ -408,7 +423,19 @@ def evaluate_lightgbm_last_step_adapter(
 ) -> dict:
     dependency = precheck_lightgbm_dependency()
     if not dependency["available"]:
-        return dependency
+        return {
+            **dependency,
+            "model": None,
+            "feature_view": "last_step_only_not_sequence",
+            "uses_full_window_sequence": False,
+            "ticker_or_pooled": "pooled",
+            "train_n": None,
+            "validation_n": None,
+            "train_row_subsample_strategy": ROW_SUBSAMPLE_STRATEGY,
+            "macro_f1": None,
+            "balanced_accuracy": None,
+            "accuracy": None,
+        }
 
     from lightgbm import LGBMClassifier
 
@@ -429,7 +456,10 @@ def evaluate_lightgbm_last_step_adapter(
         {
             "adapter": "lightgbm",
             "available": True,
+            "blocker": None,
             "model": "lightgbm_lgbmclassifier_last_step_tiny",
+            "feature_view": "last_step_only_not_sequence",
+            "uses_full_window_sequence": False,
             "ticker_or_pooled": "pooled",
             "train_n": int(len(y_train)),
             "validation_n": int(len(y_validation)),
@@ -489,7 +519,10 @@ def build_walk_forward_fold_specs(
                         ).sum()
                     ),
                     "chronological": bool(train_end < validation_start),
-                    "scope": "train_validation_only_walk_forward_contract",
+                    "contract_only": True,
+                    "model_scores_available": False,
+                    "score_fields": "not_computed",
+                    "scope": "train_validation_only_walk_forward_contract_no_scores",
                 }
             )
     return rows
@@ -567,6 +600,18 @@ def build_validation_only_report(
                     "feature_ablation_diagnostic",
                 ],
             },
+            "diagnostic_model_views": {
+                "sklearn_logreg_last_step": {
+                    "feature_view": "last_step_only_not_sequence",
+                    "class_weight": "balanced",
+                    "uses_full_window_sequence": False,
+                },
+                "lightgbm_tiny_adapter": {
+                    "feature_view": "last_step_only_not_sequence",
+                    "uses_full_window_sequence": False,
+                },
+            },
+            "walk_forward_contract_policy": "date_range_contract_only_no_model_scores",
             "closed_holdout_policy": "boundary_invalidation_only_not_transformed_not_windowed_not_scored",
             "scope": "validation_only",
         },

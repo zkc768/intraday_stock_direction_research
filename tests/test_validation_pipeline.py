@@ -1,14 +1,19 @@
 from pathlib import Path
+import warnings
 
 import numpy as np
 import pandas as pd
 import pytest
+from sklearn.exceptions import ConvergenceWarning
 
 from intraday_research.validation_pipeline import (
     build_walk_forward_fold_specs,
     build_validation_only_report,
+    evaluate_lightgbm_last_step_adapter,
+    evaluate_sklearn_logreg_last_step,
     load_ticker_csv,
     precheck_lightgbm_dependency,
+    summarize_dummy_baseline,
     subsample_rows_uniformly,
 )
 from scripts.run_validation_only_pipeline_smoke import json_default
@@ -120,6 +125,16 @@ def test_validation_only_report_uses_train_validation_without_holdout_windows(tm
     adapter = report["model_adapter_precheck"]
     assert adapter["lightgbm"]["adapter"] == "lightgbm"
     assert adapter["dependency_free_diagnostic"]["scope"].endswith("not_selection")
+    assert adapter["dependency_free_diagnostic"]["class_weight"] == "balanced"
+    assert adapter["dependency_free_diagnostic"]["feature_view"] == "last_step_only_not_sequence"
+    assert not adapter["dependency_free_diagnostic"]["uses_full_window_sequence"]
+    assert report["metadata"]["diagnostic_model_views"]["sklearn_logreg_last_step"][
+        "class_weight"
+    ] == "balanced"
+    assert (
+        report["metadata"]["walk_forward_contract_policy"]
+        == "date_range_contract_only_no_model_scores"
+    )
 
     ablation = report["feature_ablation_diagnostic"]
     assert len(ablation) == 6
@@ -130,7 +145,81 @@ def test_validation_only_report_uses_train_validation_without_holdout_windows(tm
     assert {row["ticker"] for row in walk_forward} == {"AAA"}
     assert {row["fold"] for row in walk_forward} == {1, 2}
     assert all(row["chronological"] for row in walk_forward)
-    assert all(row["scope"] == "train_validation_only_walk_forward_contract" for row in walk_forward)
+    assert all(row["contract_only"] for row in walk_forward)
+    assert all(not row["model_scores_available"] for row in walk_forward)
+    assert all(row["score_fields"] == "not_computed" for row in walk_forward)
+    assert all(
+        row["scope"] == "train_validation_only_walk_forward_contract_no_scores"
+        for row in walk_forward
+    )
+
+
+def test_dummy_summary_uses_sample_std_ddof_1():
+    dummy_rows = pd.DataFrame(
+        {
+            "macro_f1": [0.2, 0.8],
+            "balanced_accuracy": [0.3, 0.9],
+            "accuracy": [0.4, 0.6],
+            "validation_n": [10, 10],
+        }
+    )
+
+    summary = summarize_dummy_baseline(dummy_rows)
+
+    assert summary["macro_f1_std"] == pytest.approx(dummy_rows["macro_f1"].std(ddof=1))
+    assert summary["balanced_accuracy_std"] == pytest.approx(
+        dummy_rows["balanced_accuracy"].std(ddof=1)
+    )
+    assert summary["std_estimator"] == "sample_std_ddof_1"
+
+
+def test_sklearn_logreg_reports_convergence_warning_without_crashing(monkeypatch):
+    class WarningLogisticRegression:
+        def __init__(self, **kwargs):
+            self.kwargs = kwargs
+
+        def fit(self, x_values, y_values):
+            warnings.warn("iteration limit hit", ConvergenceWarning)
+            return self
+
+        def predict(self, x_values):
+            return np.zeros(len(x_values), dtype=int)
+
+    windows = {
+        "AAA": {
+            "train": {"X": np.ones((4, 2, 2)), "y": np.array([0, 1, 0, 1])},
+            "validation": {"X": np.ones((3, 2, 2)), "y": np.array([0, 1, 1])},
+        }
+    }
+    monkeypatch.setattr(
+        "intraday_research.validation_pipeline.LogisticRegression",
+        WarningLogisticRegression,
+    )
+
+    result = evaluate_sklearn_logreg_last_step(windows)
+
+    assert result["class_weight"] == "balanced"
+    assert not result["converged"]
+    assert result["fit_status"] == "convergence_warning"
+    assert "iteration limit hit" in result["fit_error"]
+    assert result["feature_view"] == "last_step_only_not_sequence"
+
+
+def test_lightgbm_unavailable_result_keeps_metric_schema(monkeypatch):
+    monkeypatch.setattr(
+        "intraday_research.validation_pipeline.importlib.util.find_spec",
+        lambda name: None if name == "lightgbm" else object(),
+    )
+
+    result = evaluate_lightgbm_last_step_adapter({})
+
+    assert result["adapter"] == "lightgbm"
+    assert not result["available"]
+    assert result["model"] is None
+    assert result["macro_f1"] is None
+    assert result["balanced_accuracy"] is None
+    assert result["accuracy"] is None
+    assert result["feature_view"] == "last_step_only_not_sequence"
 
 
 def test_walk_forward_contract_rejects_non_positive_fold_count():

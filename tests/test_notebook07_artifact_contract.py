@@ -8,10 +8,9 @@ Verifies two contracts introduced by the 2026-06-06 top-5 edits:
   P1-T06: notebook07_validation_budget_ledger.csv must carry the new
           cumulative-across-notebooks field; behaviour is append-only.
 
-There is no scripts/notebook07_contract.py helper yet, so the schema validator
-is inlined here. When Codex (or a follow-up task) lifts these checks into
-scripts/notebook07_contract.py, update the imports below and remove the
-inlined validators.
+Inline validators were previously defined in this file. They now live in
+``scripts/notebook07_contract.py`` so the N07 colab notebook generator can
+inline the same logic for Colab portability.
 """
 
 import json
@@ -20,189 +19,7 @@ from pathlib import Path
 import pandas as pd
 import pytest
 
-
-# ---------- Inline contract validators (replace once helper exists) --------
-
-
-REQUIRED_THESIS_KIT_FIELDS = {
-    "results_paragraph",
-    "robustness_paragraph",
-    "limitation_paragraph",
-    "caveat_phrases_used",
-    "forbidden_phrases_blocked_at_runtime",
-    "reproducibility_pointers",
-    "improvement_wording_applied",
-    "improvement_threshold_check",
-}
-REQUIRED_THRESHOLD_CHECK_FIELDS = {
-    "delta_macro_f1_vs_dummy_lcb_95",
-    "positive_ticker_count",
-    "passed_per_AGENTS_md_4_2_5a",
-}
-
-# AGENTS.md §4.2.5a thresholds.
-IMPROVEMENT_LCB_MIN = 0.005
-IMPROVEMENT_TICKER_COUNT_MIN = 4
-
-REQUIRED_LEDGER_COLUMNS = {
-    "artifact",
-    "notebook_stage",
-    "decision_made",
-    "decision_timing",
-    "decision_surface",
-    "model_families_considered",
-    "profiles_or_trials_considered",
-    "seeds_used",
-    "thresholds_or_coverages_considered",
-    "official_validation_rows_inspected",
-    "cumulative_official_validation_inspections_across_notebooks",
-    "train_inner_only_decision",
-    "official_validation_informed_decision",
-    "diagnostic_only_readout",
-    "holdout_test_contact",
-    "allowed_wording",
-    "forbidden_wording",
-    "risk_note",
-    "appended_by_notebook",
-    "appended_at_utc",
-}
-
-# Final validation comparison frame schema (§07B). Selective vs full-coverage
-# rows are distinguished by row_class; CONDITIONAL columns are present in the
-# rectangular CSV but their NA pattern depends on row_class.
-REQUIRED_FINAL_COMPARISON_COLUMNS = {
-    "artifact_source",
-    "notebook_stage",
-    "row_class",
-    "model",
-    "profile_id",
-    "profile_role",
-    "label_config",
-    "horizon_k",
-    "threshold_bps",
-    "feature_set",
-    "window_size",
-    "seed_count",
-    "macro_f1_mean",
-    "macro_f1_std",
-    "macro_f1_lcb_95",
-    "balanced_accuracy_mean",
-    "balanced_accuracy_std",
-    "accuracy_mean",
-    "dummy_macro_f1_mean",
-    "dummy_balanced_accuracy_mean",
-    "delta_macro_f1_vs_dummy_mean",
-    "delta_balanced_accuracy_vs_dummy_mean",
-    "always_up_dummy_macro_f1_mean",
-    "delta_macro_f1_vs_always_up_dummy_mean",
-    "positive_ticker_count",
-    "top_ticker_gain_share",
-    "validation_n",
-    "scope",
-    "decision_source",
-    "allowed_wording_tag",
-}
-CONDITIONAL_FINAL_COMPARISON_COLUMNS = {
-    "coverage",
-    "coverage_source",
-    "retained_n",
-    "abstained_n",
-    "random_abstention_macro_f1_mean",
-    "delta_macro_f1_vs_random_abstention_mean",
-}
-ALLOWED_ROW_CLASS_VALUES = {"full_coverage", "selective"}
-
-
-def validate_thesis_paragraph_kit(payload: dict) -> None:
-    missing = REQUIRED_THESIS_KIT_FIELDS - payload.keys()
-    if missing:
-        raise AssertionError(f"thesis_paragraph_kit missing fields: {sorted(missing)}")
-    check = payload["improvement_threshold_check"]
-    if not isinstance(check, dict):
-        raise AssertionError("improvement_threshold_check must be an object")
-    missing_check = REQUIRED_THRESHOLD_CHECK_FIELDS - check.keys()
-    if missing_check:
-        raise AssertionError(
-            f"improvement_threshold_check missing fields: {sorted(missing_check)}"
-        )
-    # Gate behaviour per AGENTS.md §4.2.5a.
-    passed_claim = bool(check["passed_per_AGENTS_md_4_2_5a"])
-    lcb = float(check["delta_macro_f1_vs_dummy_lcb_95"])
-    pos_n = int(check["positive_ticker_count"])
-    real_pass = lcb >= IMPROVEMENT_LCB_MIN and pos_n >= IMPROVEMENT_TICKER_COUNT_MIN
-    if passed_claim != real_pass:
-        raise AssertionError(
-            "passed_per_AGENTS_md_4_2_5a disagrees with measured "
-            f"(lcb={lcb}, pos_ticker_count={pos_n}, claim={passed_claim}, real={real_pass})"
-        )
-    if bool(payload["improvement_wording_applied"]) and not real_pass:
-        raise AssertionError(
-            "improvement_wording_applied=True without meeting AGENTS.md §4.2.5a thresholds"
-        )
-
-
-def validate_final_validation_comparison_frame(df: pd.DataFrame) -> None:
-    """Enforces §07B REQUIRED + CONDITIONAL REQUIRED contract on the final
-    comparison frame.
-
-    - REQUIRED columns must be present.
-    - row_class must be in {"full_coverage", "selective"}.
-    - For row_class == "selective", CONDITIONAL columns must be non-NA.
-    - For row_class == "full_coverage", CONDITIONAL columns must be NA.
-    """
-    missing_required = REQUIRED_FINAL_COMPARISON_COLUMNS - set(df.columns)
-    if missing_required:
-        raise AssertionError(
-            f"final_validation_comparison missing REQUIRED columns: {sorted(missing_required)}"
-        )
-    missing_conditional = CONDITIONAL_FINAL_COMPARISON_COLUMNS - set(df.columns)
-    if missing_conditional:
-        raise AssertionError(
-            "final_validation_comparison missing CONDITIONAL columns "
-            f"(must be present in the rectangular CSV even when NA): "
-            f"{sorted(missing_conditional)}"
-        )
-    bad_row_class = set(df["row_class"].unique()) - ALLOWED_ROW_CLASS_VALUES
-    if bad_row_class:
-        raise AssertionError(
-            f"final_validation_comparison row_class has invalid values: {sorted(bad_row_class)}"
-        )
-    conditional_cols = sorted(CONDITIONAL_FINAL_COMPARISON_COLUMNS)
-    selective_mask = df["row_class"] == "selective"
-    full_mask = df["row_class"] == "full_coverage"
-    if selective_mask.any():
-        sel_na = df.loc[selective_mask, conditional_cols].isna()
-        if sel_na.any().any():
-            offending = sel_na.any(axis=0)
-            cols_with_na = offending[offending].index.tolist()
-            raise AssertionError(
-                "selective rows must have non-NA conditional columns; "
-                f"NA found in: {cols_with_na}"
-            )
-    if full_mask.any():
-        full_not_na = df.loc[full_mask, conditional_cols].notna()
-        if full_not_na.any().any():
-            offending = full_not_na.any(axis=0)
-            cols_with_value = offending[offending].index.tolist()
-            raise AssertionError(
-                "full_coverage rows must have NA in conditional columns; "
-                f"non-NA found in: {cols_with_value}"
-            )
-
-
-def validate_ledger_frame(df: pd.DataFrame) -> None:
-    missing = REQUIRED_LEDGER_COLUMNS - set(df.columns)
-    if missing:
-        raise AssertionError(f"validation_budget_ledger missing columns: {sorted(missing)}")
-    # The cumulative counter must be monotonic non-decreasing along the
-    # append order (column appended_at_utc).
-    ordered = df.sort_values("appended_at_utc", kind="mergesort").reset_index(drop=True)
-    counter = ordered["cumulative_official_validation_inspections_across_notebooks"].astype(int)
-    if not counter.is_monotonic_increasing:
-        raise AssertionError(
-            "cumulative_official_validation_inspections_across_notebooks is not "
-            "monotonically non-decreasing"
-        )
+from scripts import notebook07_contract as c
 
 
 # ---------- Fixtures --------------------------------------------------------
@@ -265,23 +82,23 @@ def test_thesis_kit_valid_payload_passes(tmp_path: Path):
     kit_path = tmp_path / "notebook07_thesis_paragraph_kit.json"
     kit_path.write_text(json.dumps(_base_kit()), encoding="utf-8")
     payload = json.loads(kit_path.read_text(encoding="utf-8"))
-    validate_thesis_paragraph_kit(payload)  # must not raise
+    c.validate_thesis_paragraph_kit(payload)  # must not raise
 
 
-@pytest.mark.parametrize("dropped", sorted(REQUIRED_THESIS_KIT_FIELDS))
+@pytest.mark.parametrize("dropped", sorted(c.REQUIRED_THESIS_KIT_FIELDS))
 def test_thesis_kit_rejects_missing_top_level_field(dropped: str):
     payload = _base_kit()
     payload.pop(dropped)
     with pytest.raises(AssertionError, match="thesis_paragraph_kit missing"):
-        validate_thesis_paragraph_kit(payload)
+        c.validate_thesis_paragraph_kit(payload)
 
 
-@pytest.mark.parametrize("dropped", sorted(REQUIRED_THRESHOLD_CHECK_FIELDS))
+@pytest.mark.parametrize("dropped", sorted(c.REQUIRED_THRESHOLD_CHECK_FIELDS))
 def test_thesis_kit_rejects_missing_threshold_check_field(dropped: str):
     payload = _base_kit()
     payload["improvement_threshold_check"].pop(dropped)
     with pytest.raises(AssertionError, match="improvement_threshold_check missing"):
-        validate_thesis_paragraph_kit(payload)
+        c.validate_thesis_paragraph_kit(payload)
 
 
 def test_thesis_kit_rejects_improvement_wording_without_lcb():
@@ -291,7 +108,7 @@ def test_thesis_kit_rejects_improvement_wording_without_lcb():
     payload["improvement_threshold_check"]["passed_per_AGENTS_md_4_2_5a"] = False
     payload["improvement_wording_applied"] = True
     with pytest.raises(AssertionError, match="improvement_wording_applied"):
-        validate_thesis_paragraph_kit(payload)
+        c.validate_thesis_paragraph_kit(payload)
 
 
 def test_thesis_kit_rejects_improvement_wording_without_breadth():
@@ -300,7 +117,7 @@ def test_thesis_kit_rejects_improvement_wording_without_breadth():
     payload["improvement_threshold_check"]["passed_per_AGENTS_md_4_2_5a"] = False
     payload["improvement_wording_applied"] = True
     with pytest.raises(AssertionError, match="improvement_wording_applied"):
-        validate_thesis_paragraph_kit(payload)
+        c.validate_thesis_paragraph_kit(payload)
 
 
 def test_thesis_kit_rejects_claim_disagreement():
@@ -309,7 +126,7 @@ def test_thesis_kit_rejects_claim_disagreement():
     payload["improvement_threshold_check"]["positive_ticker_count"] = 5
     payload["improvement_threshold_check"]["passed_per_AGENTS_md_4_2_5a"] = False  # wrong claim
     with pytest.raises(AssertionError, match="disagrees with measured"):
-        validate_thesis_paragraph_kit(payload)
+        c.validate_thesis_paragraph_kit(payload)
 
 
 def test_thesis_kit_weak_signal_allows_no_improvement_wording():
@@ -317,7 +134,7 @@ def test_thesis_kit_weak_signal_allows_no_improvement_wording():
     payload["improvement_threshold_check"]["delta_macro_f1_vs_dummy_lcb_95"] = 0.001
     payload["improvement_threshold_check"]["passed_per_AGENTS_md_4_2_5a"] = False
     payload["improvement_wording_applied"] = False  # honest
-    validate_thesis_paragraph_kit(payload)  # must not raise
+    c.validate_thesis_paragraph_kit(payload)  # must not raise
 
 
 # ---------- validation_budget_ledger.csv tests -----------------------------
@@ -325,14 +142,14 @@ def test_thesis_kit_weak_signal_allows_no_improvement_wording():
 
 def test_ledger_valid_frame_passes():
     df = pd.DataFrame(_base_ledger_rows())
-    validate_ledger_frame(df)
+    c.validate_ledger_frame(df)
 
 
-@pytest.mark.parametrize("dropped", sorted(REQUIRED_LEDGER_COLUMNS))
+@pytest.mark.parametrize("dropped", sorted(c.REQUIRED_LEDGER_COLUMNS))
 def test_ledger_rejects_missing_column(dropped: str):
     df = pd.DataFrame(_base_ledger_rows()).drop(columns=[dropped])
     with pytest.raises(AssertionError, match="missing columns"):
-        validate_ledger_frame(df)
+        c.validate_ledger_frame(df)
 
 
 def test_ledger_append_only_monotonic(tmp_path: Path):
@@ -360,14 +177,14 @@ def test_ledger_append_only_monotonic(tmp_path: Path):
     n_after = len(pd.read_csv(ledger_path))
 
     assert n_after == n_before + 1, "ledger append produced wrong row count"
-    validate_ledger_frame(pd.read_csv(ledger_path))
+    c.validate_ledger_frame(pd.read_csv(ledger_path))
 
 
 # ---------- final_validation_comparison.csv tests (§07B contract) ----------
 
 
 def _base_full_coverage_row() -> dict:
-    base = {col: "x" for col in REQUIRED_FINAL_COMPARISON_COLUMNS}
+    base = {col: "x" for col in c.REQUIRED_FINAL_COMPARISON_COLUMNS}
     base["row_class"] = "full_coverage"
     # numeric-typed fields
     for f in (
@@ -375,13 +192,14 @@ def _base_full_coverage_row() -> dict:
         "macro_f1_mean", "macro_f1_std", "macro_f1_lcb_95",
         "balanced_accuracy_mean", "balanced_accuracy_std", "accuracy_mean",
         "dummy_macro_f1_mean", "dummy_balanced_accuracy_mean",
-        "delta_macro_f1_vs_dummy_mean", "delta_balanced_accuracy_vs_dummy_mean",
+        "delta_macro_f1_vs_dummy_mean", "delta_macro_f1_vs_dummy_lcb_95",
+        "delta_balanced_accuracy_vs_dummy_mean",
         "always_up_dummy_macro_f1_mean", "delta_macro_f1_vs_always_up_dummy_mean",
         "positive_ticker_count", "top_ticker_gain_share", "validation_n",
     ):
         base[f] = 0.5
     # conditional fields all NA for full_coverage
-    for f in CONDITIONAL_FINAL_COMPARISON_COLUMNS:
+    for f in c.CONDITIONAL_FINAL_COMPARISON_COLUMNS:
         base[f] = pd.NA
     return base
 
@@ -390,24 +208,24 @@ def _base_selective_row() -> dict:
     base = _base_full_coverage_row()
     base["row_class"] = "selective"
     # conditional fields all non-NA for selective
-    for f in CONDITIONAL_FINAL_COMPARISON_COLUMNS:
+    for f in c.CONDITIONAL_FINAL_COMPARISON_COLUMNS:
         base[f] = 0.5
     return base
 
 
 def test_final_comparison_valid_full_coverage_passes():
     df = pd.DataFrame([_base_full_coverage_row()])
-    validate_final_validation_comparison_frame(df)
+    c.validate_final_validation_comparison_frame(df)
 
 
 def test_final_comparison_valid_selective_passes():
     df = pd.DataFrame([_base_selective_row()])
-    validate_final_validation_comparison_frame(df)
+    c.validate_final_validation_comparison_frame(df)
 
 
 def test_final_comparison_mixed_rows_pass():
     df = pd.DataFrame([_base_full_coverage_row(), _base_selective_row()])
-    validate_final_validation_comparison_frame(df)
+    c.validate_final_validation_comparison_frame(df)
 
 
 def test_final_comparison_rejects_missing_required_column():
@@ -415,7 +233,7 @@ def test_final_comparison_rejects_missing_required_column():
     row.pop("row_class")
     df = pd.DataFrame([row])
     with pytest.raises(AssertionError, match="REQUIRED columns"):
-        validate_final_validation_comparison_frame(df)
+        c.validate_final_validation_comparison_frame(df)
 
 
 def test_final_comparison_rejects_missing_conditional_column():
@@ -423,7 +241,7 @@ def test_final_comparison_rejects_missing_conditional_column():
     row.pop("coverage")
     df = pd.DataFrame([row])
     with pytest.raises(AssertionError, match="CONDITIONAL columns"):
-        validate_final_validation_comparison_frame(df)
+        c.validate_final_validation_comparison_frame(df)
 
 
 def test_final_comparison_rejects_invalid_row_class():
@@ -431,7 +249,7 @@ def test_final_comparison_rejects_invalid_row_class():
     row["row_class"] = "partial"
     df = pd.DataFrame([row])
     with pytest.raises(AssertionError, match="invalid values"):
-        validate_final_validation_comparison_frame(df)
+        c.validate_final_validation_comparison_frame(df)
 
 
 def test_final_comparison_rejects_selective_with_na_conditional():
@@ -439,7 +257,7 @@ def test_final_comparison_rejects_selective_with_na_conditional():
     row["coverage"] = pd.NA  # selective MUST have non-NA
     df = pd.DataFrame([row])
     with pytest.raises(AssertionError, match="selective rows must have non-NA"):
-        validate_final_validation_comparison_frame(df)
+        c.validate_final_validation_comparison_frame(df)
 
 
 def test_final_comparison_rejects_full_coverage_with_value_in_conditional():
@@ -447,7 +265,32 @@ def test_final_comparison_rejects_full_coverage_with_value_in_conditional():
     row["coverage"] = 0.6  # full_coverage MUST have NA
     df = pd.DataFrame([row])
     with pytest.raises(AssertionError, match="must have NA in conditional"):
-        validate_final_validation_comparison_frame(df)
+        c.validate_final_validation_comparison_frame(df)
+
+
+# ---------- same-row dummy hard-stop (P1 from Phase B review) --------------
+
+
+@pytest.mark.parametrize("nan_col", sorted(c.SAME_ROW_DUMMY_REQUIRED_NON_NULL_COLUMNS))
+def test_final_comparison_rejects_full_coverage_with_nan_dummy_metric(nan_col: str):
+    """AGENTS.md §4.2 requires same-row stratified dummy on every model row.
+    Silent NaN would let a row reach thesis wording without a baseline.
+    """
+    row = _base_full_coverage_row()
+    row[nan_col] = float("nan")
+    df = pd.DataFrame([row])
+    with pytest.raises(AssertionError, match="same-row dummy baseline is missing"):
+        c.validate_final_validation_comparison_frame(df)
+
+
+@pytest.mark.parametrize("nan_col", sorted(c.SAME_ROW_DUMMY_REQUIRED_NON_NULL_COLUMNS))
+def test_final_comparison_rejects_selective_with_nan_dummy_metric(nan_col: str):
+    """Every selective row needs same-row stratified dummy on retained rows."""
+    row = _base_selective_row()
+    row[nan_col] = float("nan")
+    df = pd.DataFrame([row])
+    with pytest.raises(AssertionError, match="same-row dummy baseline is missing"):
+        c.validate_final_validation_comparison_frame(df)
 
 
 def test_ledger_rejects_regressing_cumulative_counter():
@@ -461,4 +304,208 @@ def test_ledger_rejects_regressing_cumulative_counter():
     )
     df = pd.DataFrame(rows)
     with pytest.raises(AssertionError, match="monotonically non-decreasing"):
-        validate_ledger_frame(df)
+        c.validate_ledger_frame(df)
+
+
+# ---------- validate_ledger_prefix_invariance tests (append-only contract) -
+
+
+def _appended_ledger_row(stage: str, when: str, cumulative: int) -> dict:
+    base = _base_ledger_rows()[0]
+    return base | {
+        "notebook_stage": stage,
+        "appended_at_utc": when,
+        "appended_by_notebook": stage,
+        "cumulative_official_validation_inspections_across_notebooks": cumulative,
+    }
+
+
+def test_prefix_invariance_accepts_strict_append():
+    existing = pd.DataFrame(_base_ledger_rows())
+    new = pd.DataFrame(
+        _base_ledger_rows()
+        + [_appended_ledger_row("07B", "2026-06-07T00:00:00Z", 1)]
+    )
+    c.validate_ledger_prefix_invariance(existing, new)  # must not raise
+
+
+def test_prefix_invariance_accepts_empty_existing():
+    new = pd.DataFrame(_base_ledger_rows())
+    c.validate_ledger_prefix_invariance(pd.DataFrame(columns=new.columns), new)
+
+
+def test_prefix_invariance_rejects_modified_existing_row():
+    existing = pd.DataFrame(_base_ledger_rows())
+    new_rows = _base_ledger_rows()
+    new_rows[0] = new_rows[0] | {"risk_note": "RETROACTIVELY EDITED"}
+    new_rows.append(_appended_ledger_row("07B", "2026-06-07T00:00:00Z", 1))
+    new = pd.DataFrame(new_rows)
+    with pytest.raises(AssertionError, match="prefix invariance violated"):
+        c.validate_ledger_prefix_invariance(existing, new)
+
+
+def test_prefix_invariance_rejects_dropped_existing_row():
+    existing_rows = _base_ledger_rows() + [_appended_ledger_row("07B", "2026-06-07T00:00:00Z", 1)]
+    existing = pd.DataFrame(existing_rows)
+    new = pd.DataFrame(_base_ledger_rows())  # dropped the 07B row
+    with pytest.raises(AssertionError, match="lost rows"):
+        c.validate_ledger_prefix_invariance(existing, new)
+
+
+def test_prefix_invariance_rejects_reordered_existing_rows():
+    base = _base_ledger_rows()[0]
+    existing_rows = [
+        base | {"notebook_stage": "07A", "appended_at_utc": "2026-06-06T00:00:00Z", "risk_note": "ROW_A"},
+        base | {"notebook_stage": "07B", "appended_at_utc": "2026-06-07T00:00:00Z", "risk_note": "ROW_B",
+                "cumulative_official_validation_inspections_across_notebooks": 1},
+    ]
+    existing = pd.DataFrame(existing_rows)
+    swapped_rows = [
+        base | {"notebook_stage": "07A", "appended_at_utc": "2026-06-06T00:00:00Z", "risk_note": "ROW_B"},
+        base | {"notebook_stage": "07B", "appended_at_utc": "2026-06-07T00:00:00Z", "risk_note": "ROW_A",
+                "cumulative_official_validation_inspections_across_notebooks": 1},
+    ]
+    new = pd.DataFrame(swapped_rows)
+    with pytest.raises(AssertionError, match="prefix invariance violated"):
+        c.validate_ledger_prefix_invariance(existing, new)
+
+
+def test_prefix_invariance_rejects_pure_row_reorder():
+    """Round 5 regression lock: a pure reorder of existing rows (same
+    content per row, swapped row positions) must be rejected.
+
+    The earlier validator sorted both sides on (appended_at_utc,
+    notebook_stage, appended_by_notebook) before comparing, so a pure
+    reorder was silently re-aligned to canonical order and accepted.
+    AGENTS.md §4.3 forbids "modified, dropped, or reordered" — reorder
+    alone must trip the contract.
+    """
+    base = _base_ledger_rows()[0]
+    row_a = base | {
+        "notebook_stage": "07A",
+        "appended_at_utc": "2026-06-06T00:00:00Z",
+        "decision_made": "lockfile_intent",
+        "appended_by_notebook": "07A",
+    }
+    row_b = base | {
+        "notebook_stage": "07B",
+        "appended_at_utc": "2026-06-07T00:00:00Z",
+        "decision_made": "comparison_intent",
+        "appended_by_notebook": "07B",
+        "cumulative_official_validation_inspections_across_notebooks": 1,
+    }
+    existing = pd.DataFrame([row_a, row_b])
+    # Same two rows, no content modification, just swapped positions.
+    reordered = pd.DataFrame([row_b, row_a])
+    with pytest.raises(AssertionError, match="prefix invariance violated"):
+        c.validate_ledger_prefix_invariance(existing, reordered)
+
+
+def test_prefix_invariance_rejects_missing_existing_column():
+    """Round 6 P2 regression lock: dropping a column that existed on disk
+    must be rejected even if all remaining (shared) cells line up. Earlier
+    revision intersected on shared columns and silently accepted column
+    drops."""
+    base = _base_ledger_rows()[0]
+    existing = pd.DataFrame([base])
+    new_dropped = existing.drop(columns=["risk_note"]).copy()
+    with pytest.raises(AssertionError, match="column set changed"):
+        c.validate_ledger_prefix_invariance(existing, new_dropped)
+
+
+def test_prefix_invariance_rejects_extra_new_column():
+    """Round 6 P2 regression lock: adding a column not in the on-disk
+    ledger must be rejected. Earlier revision silently accepted extras."""
+    base = _base_ledger_rows()[0]
+    existing = pd.DataFrame([base])
+    new_with_extra = existing.copy()
+    new_with_extra["sneaky_new_column"] = "added"
+    with pytest.raises(AssertionError, match="column set changed"):
+        c.validate_ledger_prefix_invariance(existing, new_with_extra)
+
+
+def test_prefix_invariance_rejects_column_reorder():
+    """Round 6 P2 regression lock: same column set but different column
+    order must be rejected. Earlier revision intersected then sorted
+    column names and silently re-aligned reorders."""
+    base = _base_ledger_rows()[0]
+    existing = pd.DataFrame([base])
+    cols = list(existing.columns)
+    if len(cols) < 2:
+        pytest.skip("ledger schema too small to reorder")
+    # Swap the first two columns to construct a pure reorder.
+    swapped_cols = [cols[1], cols[0]] + cols[2:]
+    new_reordered = existing[swapped_cols].copy()
+    with pytest.raises(AssertionError, match="column order changed"):
+        c.validate_ledger_prefix_invariance(existing, new_reordered)
+
+
+# ---------- parse_label_config tests ---------------------------------------
+
+
+def test_parse_label_config_h03_bps1p5():
+    parsed = c.parse_label_config("h03_bps1p5")
+    assert parsed == {"horizon_k": 3, "threshold_bps": 1.5}
+
+
+def test_parse_label_config_h12_bps10p25():
+    parsed = c.parse_label_config("h12_bps10p25")
+    assert parsed["horizon_k"] == 12
+    assert parsed["threshold_bps"] == 10.25
+
+
+@pytest.mark.parametrize("bad", ["h03_bps1", "h03bps1p5", "horizon=3", "", "  "])
+def test_parse_label_config_rejects_malformed(bad: str):
+    with pytest.raises(ValueError, match="Cannot parse label_config"):
+        c.parse_label_config(bad)
+
+
+# ---------- forbidden-phrase scan in thesis_paragraph_kit ------------------
+
+
+def test_thesis_kit_rejects_forbidden_phrase_in_results_paragraph():
+    payload = _base_kit()
+    payload["results_paragraph"] = (
+        "Under locked validation, the model is production-grade and tradable."
+    )
+    with pytest.raises(AssertionError, match="leaked forbidden phrases"):
+        c.validate_thesis_paragraph_kit(payload)
+
+
+def test_thesis_kit_rejects_forbidden_phrase_in_robustness_paragraph():
+    payload = _base_kit()
+    payload["robustness_paragraph"] = "Sharpe-aligned per-ticker positivity holds."
+    with pytest.raises(AssertionError, match="leaked forbidden phrases"):
+        c.validate_thesis_paragraph_kit(payload)
+
+
+def test_thesis_kit_rejects_forbidden_phrase_in_limitation_paragraph():
+    payload = _base_kit()
+    payload["limitation_paragraph"] = "The model is final pending deployment readiness."
+    with pytest.raises(AssertionError, match="leaked forbidden phrases"):
+        c.validate_thesis_paragraph_kit(payload)
+
+
+def test_thesis_kit_accepts_neutral_paragraphs():
+    payload = _base_kit()
+    # base kit uses neutral phrasing (no forbidden tokens) -> must not raise
+    c.validate_thesis_paragraph_kit(payload)
+
+
+# ---------- LCB vs mean disagreement gate (P1 #1) --------------------------
+
+
+def test_thesis_kit_rejects_lcb_below_threshold_even_when_mean_above():
+    """A paper-pressure rewrite that uses delta mean instead of LCB must fail.
+
+    AGENTS.md §4.2.5a is unambiguous: only the one-sided 95% LCB counts. Even
+    if the mean is 0.006 (above 0.005), an LCB of 0.003 must NOT clear the
+    improvement-wording gate.
+    """
+    payload = _base_kit()
+    payload["improvement_threshold_check"]["delta_macro_f1_vs_dummy_lcb_95"] = 0.003
+    payload["improvement_threshold_check"]["positive_ticker_count"] = 5
+    payload["improvement_threshold_check"]["passed_per_AGENTS_md_4_2_5a"] = True  # paper claim
+    payload["improvement_wording_applied"] = True
+    with pytest.raises(AssertionError, match="disagrees with measured"):
+        c.validate_thesis_paragraph_kit(payload)

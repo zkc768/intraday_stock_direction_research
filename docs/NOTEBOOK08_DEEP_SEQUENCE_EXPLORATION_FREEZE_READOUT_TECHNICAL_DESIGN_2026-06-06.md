@@ -730,10 +730,18 @@ ticker_max_share
 actual_wall_clock_seconds
 peak_memory_mb
 gpu_seconds_or_null
+compute_tier ∈ {"full_compute", "low_compute"}
 scope = exploratory
 official_validation_used = false
 holdout_test_authorized = false
 ```
+
+The `compute_tier` field defaults to `"full_compute"` for the standard 08X
+trial. It is set to `"low_compute"` only for trials originating from a §7.9
+sub-mode A (`deterministic_agg`) or sub-mode B (`train_inner_oof_mlp_head`)
+candidate. §9.2 `paper_safe_score`'s `complexity_penalty` and `compute_penalty`
+use `z_in_tier` keyed on this field; 08F MUST refuse to freeze a candidate
+whose ledger row carries a value outside the two-element enum.
 
 The `actual_wall_clock_seconds`, `peak_memory_mb`, and `gpu_seconds_or_null`
 fields are required so the `compute_penalty` term in §9.2 can be reconstructed

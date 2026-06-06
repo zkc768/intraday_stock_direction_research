@@ -286,6 +286,7 @@ the corresponding row class exists, and ignore OPTIONAL):
 # REQUIRED — every row MUST have these (full-coverage AND selective rows):
 artifact_source
 notebook_stage
+row_class ∈ {"full_coverage", "selective"}  # selects the CONDITIONAL REQUIRED contract below
 model
 profile_id
 profile_role
@@ -314,10 +315,16 @@ scope
 decision_source
 allowed_wording_tag
 
-# CONDITIONAL REQUIRED — only when the row is a selective / coverage row
-# (every selective row MUST carry ALL of these; full-coverage rows MUST
-#  OMIT them entirely — do not write NA or 0, omit the column for that row
-#  via per-row column-set declaration in artifact_source manifest):
+# CONDITIONAL REQUIRED — the columns below are always present in the rectangular
+# CSV (CSV is rectangular by construction; "missing" must be encoded). The
+# artifact contract test enforces value-presence vs NA based on row_class:
+#   - rows where row_class == "selective":  ALL columns below MUST be non-NA
+#       and carry a valid value.
+#   - rows where row_class == "full_coverage": ALL columns below MUST be NA
+#       (pandas NA, not 0, not empty string).
+# Concretely, the contract test asserts:
+#   df.loc[df.row_class == "selective",     conditional_cols].notna().all().all()
+#   df.loc[df.row_class == "full_coverage", conditional_cols].isna().all().all()
 coverage
 coverage_source
 retained_n

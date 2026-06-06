@@ -604,14 +604,35 @@ deterministic_aggregation
   # e.g. seed_mean_probability, last_step_lightgbm_only,
   # last_step_lightgbm_top_k_logit_avg with k pre-declared in 08x_search_space.json
 
-# Sub-mode B: train_inner_oof_head — a small MLP head MAY be trained, but
-# ONLY on train-inner out-of-fold predictions. NEVER on N06 same-row
-# predictions, NEVER on N05 official-validation predictions, NEVER on any
-# row drawn from the official-validation partition.
+# Sub-mode B: train_inner_oof_mlp_head — DEFAULT FORBIDDEN.
+# Becomes available only when 08x_search_space.json carries a complete
+# nested-fold specification that closes the classical stacking-leak path
+# (head training on its own evaluation rows via base-model OOF reuse).
+#
+# To unlock sub-mode B, 08x_search_space.json MUST declare ALL of:
+#   outer_fold_scheme ∈ {rolling_origin_folds, purged_time_series_folds, embargoed_train_inner_folds}
+#   outer_fold_k: int
+#   inner_fold_k_for_head: int
+#   head_train_data_source = "outer_fold_i.oof_predictions_excluding_held_out_inner_fold"
+#   head_eval_data_source  = "outer_fold_i.oof_predictions_from_held_out_inner_fold"
+#
+# Concretely (the only allowed protocol; deviations forbid sub-mode B):
+#   for each outer fold i:
+#     1. fit base model on outer_train(i); produce OOF probabilities on
+#        outer_inner_val(i) using the §8.2 train-inner fold scheme;
+#     2. split those OOF probabilities into `inner_fold_k_for_head` folds;
+#     3. for each inner fold j:
+#          a. train MLP head on the OOF probabilities of the inner folds
+#             OTHER than j;
+#          b. evaluate head ONLY on inner fold j's OOF probabilities;
+#     4. the head NEVER trains on OOF rows whose base model overlapped
+#        the head's evaluation rows.
+#
+# Head architecture, HPO budget, loss, and optimizer are all frozen in
+# 08x_search_space.json before 08X starts. 08F MUST refuse to freeze a
+# sub-mode B candidate when any of the five declarations above is absent
+# or when the runtime fold assignment deviates from the protocol.
 train_inner_oof_mlp_head
-  # head architecture and HPO budget frozen in 08x_search_space.json before
-  # 08X starts; head's loss and optimizer are also frozen; the head is fit
-  # on train-inner OOF probabilities only.
 ```
 
 Forbidden in BOTH sub-modes (08F MUST refuse to freeze a low-compute candidate
@@ -627,11 +648,16 @@ that violates any of these):
 
 Low-compute mode MUST report `compute_penalty` based on the actual seconds
 (deterministic_agg ≈ 0; train_inner_oof_head: actual wall-clock from §8.3
-`actual_wall_clock_seconds`) so the §9.2 scoring formula stays comparable to
-full-compute runs. Low-compute candidates are paper-safe baselines, NOT
-deep-sequence wins; 08F MUST tag a low-compute primary candidate's wording
-as `low_compute_baseline` so §10.4 wording downgrades automatically and
-§10.4 active-disclosure reports which sub-mode was used.
+`actual_wall_clock_seconds`). The §9.2 scoring formula uses **z_in_tier** —
+low-compute candidates form a SEPARATE z-score pool from full-compute
+candidates; 08F MUST NOT rank a low-compute candidate against full-compute
+candidates inside paper_safe_score's z-normalized terms (mixing would let a
+low-compute candidate game the compute_penalty term — see §9.2). Low-compute
+candidates are reported alongside the deep-sequence winner as paper-safe
+baselines, NOT as deep-sequence wins; 08F MUST tag a low-compute primary
+candidate's wording as `low_compute_baseline` so §10.4 wording downgrades
+automatically and §10.4 active-disclosure reports which `low_compute_submode`
+was used.
 
 ---
 
@@ -802,11 +828,22 @@ seed_stability_score = max(0, 1 - seed_std_macro_f1 / seed_std_scale)
     N06 unavailable and the fallback is recorded in the freeze record)
 fold_consistency_score = share of folds with positive delta_macro_f1_vs_dummy
 per_ticker_consistency_score = share of tickers with non-negative delta
-complexity_penalty = z(log10(parameter_count)) + z(ensemble_size) + z(fusion_depth)
-   where z = z-score normalization computed over all 08X completed trials in
-   the current run; pre-Freeze constants are recorded in 08x_search_space.json
-compute_penalty = z(actual_wall_clock_seconds) + z(failed_trial_count)
-   same z-score scope as complexity_penalty; uses §8.3 trial-ledger fields directly
+complexity_penalty = z_in_tier(log10(parameter_count))
+                     + z_in_tier(ensemble_size)
+                     + z_in_tier(fusion_depth)
+   where z_in_tier is z-score normalization computed over the trials in the
+   SAME `compute_tier` ∈ {"low_compute", "full_compute"} as the trial being
+   scored. The `compute_tier` field MUST be present on every §8.3 ledger row
+   (default `"full_compute"`; only sub-mode A or sub-mode B candidates of
+   §7.9 carry `"low_compute"`). Cross-tier z-pool mixing is FORBIDDEN
+   because a single low-compute trial with wall_clock ≈ 0 placed inside a
+   full-compute pool would receive z ≈ -10 on compute_penalty and inflate
+   its paper_safe_score by ≈ +0.5 (z ≈ -10, weight = -0.05) — that is a
+   gaming vector, not a meaningful penalty.
+compute_penalty = z_in_tier(actual_wall_clock_seconds)
+                  + z_in_tier(failed_trial_count)
+   same z_in_tier scope as complexity_penalty; uses §8.3 trial-ledger fields
+   directly; never blends across tiers.
 ```
 
 The constants above are defaults for a future implementation plan. If changed,
@@ -897,7 +934,11 @@ OPERATOR_READOUT_AUTHORIZATION_SHA == sha256_canonical(
   #     3. canonicalize the file bytes:
   #          - "json_canonical": json.loads(text) then
   #            json.dumps(obj, sort_keys=True, separators=(",", ":"),
-  #            ensure_ascii=False).encode("utf-8");
+  #            ensure_ascii=False, allow_nan=False).encode("utf-8");
+  #            (freeze record and its inputs MUST NOT contain NaN / Infinity
+  #             / -Infinity; the freeze-record schema rejects such values
+  #             BEFORE this canonicalization step; allow_nan=False ensures
+  #             python won't silently emit non-RFC-8259-conformant tokens.)
   #          - "text_lf": open(path, "rb").read().replace(b"\r\n", b"\n");
   #     4. emit `len(canonical_bytes).to_bytes(8, "big") + canonical_bytes`.
   # Recorded into 08o_decision_record.json before any read.

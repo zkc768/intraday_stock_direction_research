@@ -283,7 +283,7 @@ static tests assert REQUIRED columns present, RECOMMENDED columns present if
 the corresponding row class exists, and ignore OPTIONAL):
 
 ```text
-# REQUIRED — every row MUST have these:
+# REQUIRED — every row MUST have these (full-coverage AND selective rows):
 artifact_source
 notebook_stage
 model
@@ -294,8 +294,6 @@ horizon_k
 threshold_bps
 feature_set
 window_size
-coverage
-coverage_source
 seed_count
 macro_f1_mean
 macro_f1_std
@@ -309,28 +307,28 @@ delta_macro_f1_vs_dummy_mean
 delta_balanced_accuracy_vs_dummy_mean
 always_up_dummy_macro_f1_mean
 delta_macro_f1_vs_always_up_dummy_mean
-random_abstention_macro_f1_mean
-delta_macro_f1_vs_random_abstention_mean
 positive_ticker_count
 top_ticker_gain_share
 validation_n
-retained_n
-abstained_n
 scope
 decision_source
 allowed_wording_tag
 
-# RECOMMENDED — present when row class supports them
-# (profile_id, profile_role, label_config, horizon_k, threshold_bps,
-#  feature_set, window_size, macro_f1_std, balanced_accuracy_std,
-#  dummy_balanced_accuracy_mean, delta_balanced_accuracy_vs_dummy_mean,
-#  always_up_dummy_macro_f1_mean, delta_macro_f1_vs_always_up_dummy_mean,
-#  diagnostic_only)
+# CONDITIONAL REQUIRED — only when the row is a selective / coverage row
+# (every selective row MUST carry ALL of these; full-coverage rows MUST
+#  OMIT them entirely — do not write NA or 0, omit the column for that row
+#  via per-row column-set declaration in artifact_source manifest):
+coverage
+coverage_source
+retained_n
+abstained_n
+random_abstention_macro_f1_mean
+delta_macro_f1_vs_random_abstention_mean
+
+# RECOMMENDED — present when row class supports it:
 diagnostic_only
 
-# OPTIONAL — selective / coverage rows only
-# (coverage, coverage_source, retained_n, abstained_n,
-#  random_abstention_macro_f1_mean, delta_macro_f1_vs_random_abstention_mean)
+# OPTIONAL — reserved for future schema growth (no current columns)
 ```
 
 Interpretation:
@@ -673,9 +671,21 @@ OPERATOR_ACKNOWLEDGES_07_IS_NOT_SEARCH = False
 OPERATOR_ACKNOWLEDGES_NO_HOLDOUT_TEST = False
 OPERATOR_ACKNOWLEDGES_NO_SELECTION_FROM_EXPLANATIONS = False
 OPERATOR_ACKNOWLEDGES_NO_THRESHOLD_SEARCH = False
-EXPECTED_DESIGN_DOC_SHA256 = ""  # sha256 of the 2026-06-06 design at freeze time;
-                                  # 07A asserts hashlib.sha256(open(__file__).read()) ==
-                                  # EXPECTED_DESIGN_DOC_SHA256 before any RUN_07* may set True
+DESIGN_DOC_PATH = "docs/NOTEBOOK07_VALIDATION_SYNTHESIS_AND_GAP_AUDIT_TECHNICAL_DESIGN_2026-06-06.md"
+EXPECTED_DESIGN_DOC_SHA256 = ""  # 64-hex sha of design doc bytes at freeze time
+DESIGN_DOC_SHA256_OBSERVED = ""  # 07A fills this at runtime; see implementation note below
+# 07A implementation:
+#   with open(DESIGN_DOC_PATH, "rb") as _fh:  # binary mode; bytes are canonical
+#       DESIGN_DOC_SHA256_OBSERVED = hashlib.sha256(_fh.read()).hexdigest()
+#   assert DESIGN_DOC_SHA256_OBSERVED == EXPECTED_DESIGN_DOC_SHA256, (
+#       "07A: design doc bytes drifted; refreeze required before any RUN_07* may be True"
+#   )
+# Notes:
+#   - DO NOT use __file__ (Colab notebooks often lack a stable __file__).
+#   - Open in binary mode so platform LF/CRLF normalization does not change bytes.
+#   - The design doc is canonicalized to LF before freeze time; the freeze-time
+#     bytes are what is hashed. If git ever auto-rewrites LF<->CRLF for this file,
+#     the .gitattributes entry must pin it as `text eol=lf` so the bytes stay stable.
 ```
 
 If a run-all copy is ever created, it must be separately named and must not replace the canonical notebook.

@@ -585,26 +585,53 @@ new freeze record; the current freeze does not authorize it. This isolates
 the "compute on train-inner" surface from the "decide which candidate wins"
 surface so that selective fishing cannot leak from §7.8 into §9.2.
 
-### 7.9 08X-Zero-Compute Mode (Optional Fallback)
+### 7.9 08X-Low-Compute Baseline Mode (Optional Fallback)
+
+(Renamed from "zero-compute": even deterministic post-processing can train a
+small head if not constrained; "low-compute" is honest about what the mode
+costs and what it forbids.)
 
 When future compute budget is exhausted but a deep-sequence comparison is still
-desired, 08X may declare a `zero_compute_mode = True` in
-`08x_search_space.json`. This mode is restricted to architectures that can be
-constructed from N05/N06 frozen artifacts without any new training:
+desired, 08X may declare a `low_compute_mode = True` in
+`08x_search_space.json`. This mode is restricted to **two strictly mutually
+exclusive sub-modes**, declared by `low_compute_submode ∈ {"deterministic_agg",
+"train_inner_oof_head"}`:
 
 ```text
-last_step_lightgbm_stacking   # logits / probabilities from N05 LightGBM
-                              # combined with last_step MLP head trained on
-                              # N06 same-row predictions (CPU minutes)
-last_step_mlp_sequence_ablation  # last-step MLP using only train-inner
-                                  # cached features; no sequence model
+# Sub-mode A: deterministic_agg — NO trainable head; any aggregation rule
+# whose weights are fixed before 08X starts.
+deterministic_aggregation
+  # e.g. seed_mean_probability, last_step_lightgbm_only,
+  # last_step_lightgbm_top_k_logit_avg with k pre-declared in 08x_search_space.json
+
+# Sub-mode B: train_inner_oof_head — a small MLP head MAY be trained, but
+# ONLY on train-inner out-of-fold predictions. NEVER on N06 same-row
+# predictions, NEVER on N05 official-validation predictions, NEVER on any
+# row drawn from the official-validation partition.
+train_inner_oof_mlp_head
+  # head architecture and HPO budget frozen in 08x_search_space.json before
+  # 08X starts; head's loss and optimizer are also frozen; the head is fit
+  # on train-inner OOF probabilities only.
 ```
 
-Zero-compute mode MUST report `compute_penalty` based on the trivial cost
-(seconds, not minutes) so the §9.2 scoring formula remains comparable to
-full-compute runs. Zero-compute candidates are paper-safe baselines, not
-deep-sequence wins; 08F MUST tag a zero-compute primary candidate's wording
-as `zero_compute_baseline` so §10.4 wording downgrades automatically.
+Forbidden in BOTH sub-modes (08F MUST refuse to freeze a low-compute candidate
+that violates any of these):
+
+- training any model component on N06 `*_per_ticker_*.csv` /
+  `*_coverage_*.csv` / `*_validation_*.csv` rows (these are
+  official-validation artifacts);
+- training on N05 `notebook05_official_validation_*.csv` rows;
+- using any same-row prediction that originated from the official-validation
+  partition;
+- any post-fit fine-tune step that touches official-validation data.
+
+Low-compute mode MUST report `compute_penalty` based on the actual seconds
+(deterministic_agg ≈ 0; train_inner_oof_head: actual wall-clock from §8.3
+`actual_wall_clock_seconds`) so the §9.2 scoring formula stays comparable to
+full-compute runs. Low-compute candidates are paper-safe baselines, NOT
+deep-sequence wins; 08F MUST tag a low-compute primary candidate's wording
+as `low_compute_baseline` so §10.4 wording downgrades automatically and
+§10.4 active-disclosure reports which sub-mode was used.
 
 ---
 
@@ -856,11 +883,26 @@ finalized before any inspection event above.
 holdout_test_authorized == false
 official_validation_used_for_selection == false
 RUN_08O_OFFICIAL_VALIDATION_READOUT == True by explicit operator edit
-OPERATOR_READOUT_AUTHORIZATION_SHA == sha256(
-    08f_candidate_freeze_record.json + this design doc + AGENTS.md
-  )  # recorded into 08o_decision_record.json before any read;
-     # static gate rejects 08O if the SHA does not match the freeze record
-     # and the running design-doc / AGENTS.md bytes.
+OPERATOR_READOUT_AUTHORIZATION_SHA == sha256_canonical(
+    fixed_order_inputs = [
+      ("08f_candidate_freeze_record.json", "json_canonical"),
+      ("docs/NOTEBOOK08_DEEP_SEQUENCE_EXPLORATION_FREEZE_READOUT_TECHNICAL_DESIGN_2026-06-06.md", "text_lf"),
+      ("AGENTS.md", "text_lf"),
+    ]
+  )
+  # Canonical byte recipe (sha256 hexdigest of the concatenation below):
+  #   for each input in fixed_order_inputs (DO NOT sort, DO NOT change order):
+  #     1. encode the input's relative_path as UTF-8 bytes;
+  #     2. emit `len(path_bytes).to_bytes(8, "big") + path_bytes`;
+  #     3. canonicalize the file bytes:
+  #          - "json_canonical": json.loads(text) then
+  #            json.dumps(obj, sort_keys=True, separators=(",", ":"),
+  #            ensure_ascii=False).encode("utf-8");
+  #          - "text_lf": open(path, "rb").read().replace(b"\r\n", b"\n");
+  #     4. emit `len(canonical_bytes).to_bytes(8, "big") + canonical_bytes`.
+  # Recorded into 08o_decision_record.json before any read.
+  # Static gate rejects 08O if OPERATOR_READOUT_AUTHORIZATION_SHA does not
+  # match the SHA computed by this recipe from the on-disk bytes at 08O entry.
 ```
 
 ### 10.2 Official-Validation Readout Rules

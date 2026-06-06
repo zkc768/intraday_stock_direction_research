@@ -162,6 +162,7 @@ def test_notebook07_default_run_switches_are_inert():
         "RUN_07G_GAP_AUDIT_FOR_08X",
         "RUN_07H_PAPER_READY_SYNTHESIS",
         "RUN_07I_BACKUP_TO_GOOGLE_DRIVE",
+        "RUN_07J_WRITE_MONITORING_PLAN",
     ):
         assert f"{switch} = False" in source, f"{switch} not defaulted to False"
         assert f"{switch} = True" not in source

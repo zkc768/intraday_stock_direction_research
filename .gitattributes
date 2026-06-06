@@ -1,0 +1,25 @@
+# Pin LF line endings on files whose sha256 must be byte-stable across
+# platforms. AGENTS.md, the N07/N08 design docs, and N05 protocol are
+# referenced by EXPECTED_DESIGN_DOC_SHA256 (N07 §07A) and by
+# OPERATOR_READOUT_AUTHORIZATION_SHA (N08 §10.1). Without this pin, a
+# Windows checkout with `core.autocrlf=true` would rewrite LF→CRLF
+# locally and silently break the hash equality used by those gates.
+
+AGENTS.md                                                                                     text eol=lf
+docs/RESEARCH_WORKFLOW.md                                                                     text eol=lf
+docs/CONFIG_SCREENING_FREEZE_2026-06-04.md                                                    text eol=lf
+docs/NOTEBOOK05_LIGHTGBM_TUNING_PROTOCOL_2026-06-04.md                                        text eol=lf
+docs/NOTEBOOK06_SELECTIVE_NO_TRADE_CALIBRATION_PROTOCOL_2026-06-05.md                         text eol=lf
+docs/NOTEBOOK06_SELECTIVE_NO_TRADE_TECHNICAL_DESIGN_2026-06-05.md                             text eol=lf
+docs/NOTEBOOK07_VALIDATION_SYNTHESIS_AND_GAP_AUDIT_TECHNICAL_DESIGN_2026-06-06.md             text eol=lf
+docs/NOTEBOOK08_DEEP_SEQUENCE_EXPLORATION_FREEZE_READOUT_TECHNICAL_DESIGN_2026-06-06.md       text eol=lf
+
+# Python source kept LF as well so any embedded SHA computation matches
+# what git tracks.
+*.py                                                                                          text eol=lf
+
+# Notebooks and JSON artifacts treated as binary so git does not mangle
+# them on Windows (Jupyter expects JSON-line-stable, not CRLF-rewritten).
+*.ipynb                                                                                       binary
+*.json                                                                                        binary
+*.npz                                                                                         binary

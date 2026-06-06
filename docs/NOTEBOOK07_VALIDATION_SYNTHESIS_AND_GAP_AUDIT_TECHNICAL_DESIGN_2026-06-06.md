@@ -642,7 +642,8 @@ Plan:
 - monitoring cadence: at least one re-run per calendar quarter for the first year after publication, then per year;
 - monitoring scope per cycle: rerun §07B band comparison and §07D concentration on the same frozen N05 LightGBM candidate using newly arrived N05 / N06 same-candidate data; do NOT change the candidate, feature set, label, window, or threshold;
 - monitoring outcome routing: if any §07H falsification condition becomes true under monitor data, the monitor MUST write an `erratum_recommended.json` next to the original paper artifacts; the original paper text is NOT retroactively edited (transparency erratum, not revision);
-- monitoring is read-only diagnostic: it cannot select a new model, threshold, feature, or wording. Any change requires a new pre-registered protocol (08X / 08F / 08O or beyond);
+- monitoring is read-only diagnostic in the **model / threshold / feature / window dimension**: it cannot retrain a model, alter a threshold, add or remove a feature, or change the window-size selection. Any of those changes requires a new pre-registered protocol (08X / 08F / 08O or beyond);
+- `notebook07_erratum_recommended.json` is a **recommendation**, not a publication action: the monitor emits it when a §07H falsification condition becomes true; the human author then independently decides whether to publish the erratum. The decision-to-publish is a wording / disclosure action, not a model or feature change, and does NOT violate the read-only constraint above. Even when the monitor recommends, the original paper text is NOT retroactively edited;
 - 07J does NOT authorize holdout/test access at any cycle.
 
 Required outputs (when `RUN_07J_WRITE_MONITORING_PLAN = True`):

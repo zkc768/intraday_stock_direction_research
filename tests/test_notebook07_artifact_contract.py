@@ -67,6 +67,51 @@ REQUIRED_LEDGER_COLUMNS = {
     "appended_at_utc",
 }
 
+# Final validation comparison frame schema (§07B). Selective vs full-coverage
+# rows are distinguished by row_class; CONDITIONAL columns are present in the
+# rectangular CSV but their NA pattern depends on row_class.
+REQUIRED_FINAL_COMPARISON_COLUMNS = {
+    "artifact_source",
+    "notebook_stage",
+    "row_class",
+    "model",
+    "profile_id",
+    "profile_role",
+    "label_config",
+    "horizon_k",
+    "threshold_bps",
+    "feature_set",
+    "window_size",
+    "seed_count",
+    "macro_f1_mean",
+    "macro_f1_std",
+    "macro_f1_lcb_95",
+    "balanced_accuracy_mean",
+    "balanced_accuracy_std",
+    "accuracy_mean",
+    "dummy_macro_f1_mean",
+    "dummy_balanced_accuracy_mean",
+    "delta_macro_f1_vs_dummy_mean",
+    "delta_balanced_accuracy_vs_dummy_mean",
+    "always_up_dummy_macro_f1_mean",
+    "delta_macro_f1_vs_always_up_dummy_mean",
+    "positive_ticker_count",
+    "top_ticker_gain_share",
+    "validation_n",
+    "scope",
+    "decision_source",
+    "allowed_wording_tag",
+}
+CONDITIONAL_FINAL_COMPARISON_COLUMNS = {
+    "coverage",
+    "coverage_source",
+    "retained_n",
+    "abstained_n",
+    "random_abstention_macro_f1_mean",
+    "delta_macro_f1_vs_random_abstention_mean",
+}
+ALLOWED_ROW_CLASS_VALUES = {"full_coverage", "selective"}
+
 
 def validate_thesis_paragraph_kit(payload: dict) -> None:
     missing = REQUIRED_THESIS_KIT_FIELDS - payload.keys()
@@ -94,6 +139,55 @@ def validate_thesis_paragraph_kit(payload: dict) -> None:
         raise AssertionError(
             "improvement_wording_applied=True without meeting AGENTS.md §4.2.5a thresholds"
         )
+
+
+def validate_final_validation_comparison_frame(df: pd.DataFrame) -> None:
+    """Enforces §07B REQUIRED + CONDITIONAL REQUIRED contract on the final
+    comparison frame.
+
+    - REQUIRED columns must be present.
+    - row_class must be in {"full_coverage", "selective"}.
+    - For row_class == "selective", CONDITIONAL columns must be non-NA.
+    - For row_class == "full_coverage", CONDITIONAL columns must be NA.
+    """
+    missing_required = REQUIRED_FINAL_COMPARISON_COLUMNS - set(df.columns)
+    if missing_required:
+        raise AssertionError(
+            f"final_validation_comparison missing REQUIRED columns: {sorted(missing_required)}"
+        )
+    missing_conditional = CONDITIONAL_FINAL_COMPARISON_COLUMNS - set(df.columns)
+    if missing_conditional:
+        raise AssertionError(
+            "final_validation_comparison missing CONDITIONAL columns "
+            f"(must be present in the rectangular CSV even when NA): "
+            f"{sorted(missing_conditional)}"
+        )
+    bad_row_class = set(df["row_class"].unique()) - ALLOWED_ROW_CLASS_VALUES
+    if bad_row_class:
+        raise AssertionError(
+            f"final_validation_comparison row_class has invalid values: {sorted(bad_row_class)}"
+        )
+    conditional_cols = sorted(CONDITIONAL_FINAL_COMPARISON_COLUMNS)
+    selective_mask = df["row_class"] == "selective"
+    full_mask = df["row_class"] == "full_coverage"
+    if selective_mask.any():
+        sel_na = df.loc[selective_mask, conditional_cols].isna()
+        if sel_na.any().any():
+            offending = sel_na.any(axis=0)
+            cols_with_na = offending[offending].index.tolist()
+            raise AssertionError(
+                "selective rows must have non-NA conditional columns; "
+                f"NA found in: {cols_with_na}"
+            )
+    if full_mask.any():
+        full_not_na = df.loc[full_mask, conditional_cols].notna()
+        if full_not_na.any().any():
+            offending = full_not_na.any(axis=0)
+            cols_with_value = offending[offending].index.tolist()
+            raise AssertionError(
+                "full_coverage rows must have NA in conditional columns; "
+                f"non-NA found in: {cols_with_value}"
+            )
 
 
 def validate_ledger_frame(df: pd.DataFrame) -> None:
@@ -267,6 +361,93 @@ def test_ledger_append_only_monotonic(tmp_path: Path):
 
     assert n_after == n_before + 1, "ledger append produced wrong row count"
     validate_ledger_frame(pd.read_csv(ledger_path))
+
+
+# ---------- final_validation_comparison.csv tests (§07B contract) ----------
+
+
+def _base_full_coverage_row() -> dict:
+    base = {col: "x" for col in REQUIRED_FINAL_COMPARISON_COLUMNS}
+    base["row_class"] = "full_coverage"
+    # numeric-typed fields
+    for f in (
+        "horizon_k", "threshold_bps", "window_size", "seed_count",
+        "macro_f1_mean", "macro_f1_std", "macro_f1_lcb_95",
+        "balanced_accuracy_mean", "balanced_accuracy_std", "accuracy_mean",
+        "dummy_macro_f1_mean", "dummy_balanced_accuracy_mean",
+        "delta_macro_f1_vs_dummy_mean", "delta_balanced_accuracy_vs_dummy_mean",
+        "always_up_dummy_macro_f1_mean", "delta_macro_f1_vs_always_up_dummy_mean",
+        "positive_ticker_count", "top_ticker_gain_share", "validation_n",
+    ):
+        base[f] = 0.5
+    # conditional fields all NA for full_coverage
+    for f in CONDITIONAL_FINAL_COMPARISON_COLUMNS:
+        base[f] = pd.NA
+    return base
+
+
+def _base_selective_row() -> dict:
+    base = _base_full_coverage_row()
+    base["row_class"] = "selective"
+    # conditional fields all non-NA for selective
+    for f in CONDITIONAL_FINAL_COMPARISON_COLUMNS:
+        base[f] = 0.5
+    return base
+
+
+def test_final_comparison_valid_full_coverage_passes():
+    df = pd.DataFrame([_base_full_coverage_row()])
+    validate_final_validation_comparison_frame(df)
+
+
+def test_final_comparison_valid_selective_passes():
+    df = pd.DataFrame([_base_selective_row()])
+    validate_final_validation_comparison_frame(df)
+
+
+def test_final_comparison_mixed_rows_pass():
+    df = pd.DataFrame([_base_full_coverage_row(), _base_selective_row()])
+    validate_final_validation_comparison_frame(df)
+
+
+def test_final_comparison_rejects_missing_required_column():
+    row = _base_full_coverage_row()
+    row.pop("row_class")
+    df = pd.DataFrame([row])
+    with pytest.raises(AssertionError, match="REQUIRED columns"):
+        validate_final_validation_comparison_frame(df)
+
+
+def test_final_comparison_rejects_missing_conditional_column():
+    row = _base_full_coverage_row()
+    row.pop("coverage")
+    df = pd.DataFrame([row])
+    with pytest.raises(AssertionError, match="CONDITIONAL columns"):
+        validate_final_validation_comparison_frame(df)
+
+
+def test_final_comparison_rejects_invalid_row_class():
+    row = _base_full_coverage_row()
+    row["row_class"] = "partial"
+    df = pd.DataFrame([row])
+    with pytest.raises(AssertionError, match="invalid values"):
+        validate_final_validation_comparison_frame(df)
+
+
+def test_final_comparison_rejects_selective_with_na_conditional():
+    row = _base_selective_row()
+    row["coverage"] = pd.NA  # selective MUST have non-NA
+    df = pd.DataFrame([row])
+    with pytest.raises(AssertionError, match="selective rows must have non-NA"):
+        validate_final_validation_comparison_frame(df)
+
+
+def test_final_comparison_rejects_full_coverage_with_value_in_conditional():
+    row = _base_full_coverage_row()
+    row["coverage"] = 0.6  # full_coverage MUST have NA
+    df = pd.DataFrame([row])
+    with pytest.raises(AssertionError, match="must have NA in conditional"):
+        validate_final_validation_comparison_frame(df)
 
 
 def test_ledger_rejects_regressing_cumulative_counter():

@@ -611,8 +611,9 @@ deterministic_aggregation
 #
 # To unlock sub-mode B, 08x_search_space.json MUST declare ALL of:
 #   outer_fold_scheme ∈ {rolling_origin_folds, purged_time_series_folds, embargoed_train_inner_folds}
-#   outer_fold_k: int
-#   inner_fold_k_for_head: int
+#   outer_fold_k: int (MUST be >= 5; smaller k inflates fold-to-fold variance
+#                     and makes head over-fit per-fold idiosyncrasies)
+#   inner_fold_k_for_head: int (MUST be >= 5; same reason)
 #   head_train_data_source = "outer_fold_i.oof_predictions_excluding_held_out_inner_fold"
 #   head_eval_data_source  = "outer_fold_i.oof_predictions_from_held_out_inner_fold"
 #
@@ -840,10 +841,17 @@ complexity_penalty = z_in_tier(log10(parameter_count))
    full-compute pool would receive z ≈ -10 on compute_penalty and inflate
    its paper_safe_score by ≈ +0.5 (z ≈ -10, weight = -0.05) — that is a
    gaming vector, not a meaningful penalty.
+   Edge cases:
+     - if a tier has < 2 completed trials, std is undefined; the
+       z_in_tier(.) term contributes 0 to that tier's
+       complexity_penalty / compute_penalty for that trial (no penalty
+       inflation, no NaN propagation);
+     - if a tier has 0 completed trials, no candidate is scored from that
+       tier and 08F MUST refuse to freeze a candidate originating from it.
 compute_penalty = z_in_tier(actual_wall_clock_seconds)
                   + z_in_tier(failed_trial_count)
-   same z_in_tier scope as complexity_penalty; uses §8.3 trial-ledger fields
-   directly; never blends across tiers.
+   same z_in_tier scope and edge-case handling as complexity_penalty;
+   uses §8.3 trial-ledger fields directly; never blends across tiers.
 ```
 
 The constants above are defaults for a future implementation plan. If changed,
@@ -1028,6 +1036,16 @@ the official validation partition, with the reported seed variance, per-ticker
 distribution, and concentration caveats. This is not holdout/test evidence and
 does not revise the Stage 0 selection narrative.
 ```
+
+Mandatory automatic downgrade — if `08f_candidate_freeze_record.json` carries
+`low_compute_baseline = True`, the strongest allowed wording bucket is
+forced to "weak/mixed" REGARDLESS of measured metrics. This is a hard
+override: even if `lcb_delta_macro_f1_vs_dummy >= 0.005 AND positive_ticker_count >= 4`
+would otherwise allow "improvement" per AGENTS.md §4.2.5a, a low-compute
+primary candidate cannot use that wording. The §10.4 active-disclosure
+block (§10.4 below) MUST additionally report the `low_compute_submode`
+value (`"deterministic_agg"` or `"train_inner_oof_mlp_head"`) so the
+reader knows which baseline was selected.
 
 If weak/mixed:
 

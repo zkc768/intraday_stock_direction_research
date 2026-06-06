@@ -533,6 +533,12 @@ and can obscure trial accounting. It should remain optional/research-only unless
 08X writes full lineage records for exploit/explore events, inherited weights,
 and schedule mutations.
 
+**All architecture families participating in a single 08X run MUST use the
+same HPO method.** Mixing (e.g. ASHA for `tcn_only` and TPE for `ms_dlinear_tcn`)
+makes the per-family budget incomparable and is an HPO-unfairness vector.
+The chosen HPO method is sha256-stamped into `08x_search_space.json` before
+trial 0 runs; changing it after that is a contract violation.
+
 ### 7.7 Ensembles
 
 Allowed only if frozen before official validation:
@@ -578,6 +584,27 @@ candidate compression, that requires a separately frozen 08F protocol and a
 new freeze record; the current freeze does not authorize it. This isolates
 the "compute on train-inner" surface from the "decide which candidate wins"
 surface so that selective fishing cannot leak from §7.8 into §9.2.
+
+### 7.9 08X-Zero-Compute Mode (Optional Fallback)
+
+When future compute budget is exhausted but a deep-sequence comparison is still
+desired, 08X may declare a `zero_compute_mode = True` in
+`08x_search_space.json`. This mode is restricted to architectures that can be
+constructed from N05/N06 frozen artifacts without any new training:
+
+```text
+last_step_lightgbm_stacking   # logits / probabilities from N05 LightGBM
+                              # combined with last_step MLP head trained on
+                              # N06 same-row predictions (CPU minutes)
+last_step_mlp_sequence_ablation  # last-step MLP using only train-inner
+                                  # cached features; no sequence model
+```
+
+Zero-compute mode MUST report `compute_penalty` based on the trivial cost
+(seconds, not minutes) so the §9.2 scoring formula remains comparable to
+full-compute runs. Zero-compute candidates are paper-safe baselines, not
+deep-sequence wins; 08F MUST tag a zero-compute primary candidate's wording
+as `zero_compute_baseline` so §10.4 wording downgrades automatically.
 
 ---
 
@@ -674,9 +701,16 @@ timeout
 memory_error
 artifact_schema_failure
 official_validation_boundary_violation
+feature_window_leak_detected
 insufficient_same_row_dummy
 no_improvement_over_last_step_control
 ```
+
+`feature_window_leak_detected` triggers when window construction detects that
+any sample's input window crossed a trading-day boundary, crossed a ticker
+boundary, used a feature value computed from a bar at or after the label
+horizon, or used preprocessing statistics fit on rows outside the train-inner
+fold. Detection is automated; manual override is forbidden.
 
 ---
 
@@ -704,7 +738,11 @@ A candidate may enter 08F only if:
 1. It has complete trial rows for all required folds and seeds, or explicit
    failure rows for missing runs.
 2. It beats same-row stratified dummy on train-inner validation by a predeclared
-   margin.
+   numeric margin recorded in `08x_search_space.json.eligibility_thresholds.min_train_inner_lcb_delta_macro_f1`
+   (default value defined by `candidate_eligibility_min_train_inner_lcb_delta`
+   in §5.5 Pre-registration Constants Table). The margin numeric MUST be
+   present and sha256-stamped before 08X trial 0 runs; "predeclared" without a
+   number is treated as missing.
 3. It beats the simple sequence controls under the same budget.
 4. It avoids class collapse.
 5. It avoids severe ticker concentration.
@@ -818,6 +856,11 @@ finalized before any inspection event above.
 holdout_test_authorized == false
 official_validation_used_for_selection == false
 RUN_08O_OFFICIAL_VALIDATION_READOUT == True by explicit operator edit
+OPERATOR_READOUT_AUTHORIZATION_SHA == sha256(
+    08f_candidate_freeze_record.json + this design doc + AGENTS.md
+  )  # recorded into 08o_decision_record.json before any read;
+     # static gate rejects 08O if the SHA does not match the freeze record
+     # and the running design-doc / AGENTS.md bytes.
 ```
 
 ### 10.2 Official-Validation Readout Rules
@@ -841,7 +884,11 @@ RUN_08O_OFFICIAL_VALIDATION_READOUT == True by explicit operator edit
 
 ### 10.3 Metrics
 
-Primary metrics:
+Metrics are partitioned into three explicit groups so the artifact-contract
+static gate can assert REQUIRED metrics present, RECOMMENDED metrics present
+when their row class supports them, and OPTIONAL metrics never gate emission:
+
+Primary metrics — REQUIRED on every 08O row:
 
 ```text
 macro_f1
@@ -850,7 +897,7 @@ delta_macro_f1_vs_stratified_dummy_same_rows
 delta_balanced_accuracy_vs_stratified_dummy_same_rows
 ```
 
-Required supporting metrics:
+Required supporting metrics — also REQUIRED on every 08O row:
 
 ```text
 accuracy
@@ -870,7 +917,8 @@ ticker_max_share
 date/time concentration diagnostics
 ```
 
-Diagnostic-only metrics:
+Diagnostic-only metrics — OPTIONAL; their absence does NOT fail the artifact
+contract:
 
 ```text
 brier_score
@@ -916,6 +964,27 @@ The model is tradable/deployable/profitable.
 The 08 result invalidates the 02-06 route.
 ```
 
+Active-disclosure block (mandatory in every 08O paper text emission, even
+when results pass — this is the "pre-registered failure conditions met"
+section that strengthens the result by making its boundaries explicit):
+
+```text
+Pre-registered failure conditions evaluated at 08O readout time:
+- 08F could have written `no_candidate_freezable` if X; X did/did_not occur.
+- 08O could have produced "weak/mixed" wording if `lcb_delta_macro_f1` < 0.005
+  OR `positive_ticker_count` < 4; thresholds were Y and Z, so the chosen
+  wording bucket is "<bucket>" per AGENTS.md §4.2.5a.
+- The frozen candidate's per-ticker delta was negative on N tickers (N >= 0);
+  values are reported in `08o_validation_per_ticker.csv`.
+- The frozen candidate's seed std was W; if W > 0.01 we would have downgraded
+  wording to "unstable" per §9.2's `seed_stability_score` floor.
+```
+
+This block ALWAYS appears, even when all conditions pass; the conditions
+that did not trigger are reported as "X did_not occur" with the actual
+measured value. Hiding the block when results are clean is a contract
+violation.
+
 ---
 
 ## 11. Budget Tiers
@@ -932,6 +1001,16 @@ hardware, data size, and implementation efficiency.
 
 Budget accounting must count failed, timed-out, skipped, and early-stopped trials.
 Deep models must not receive unreported hidden budget.
+
+The above table gives an upper bound that depends on hardware. A separate
+*scientific* upper bound — independent of compute — caps total trials such
+that the minimum effect size 08F can credibly detect at alpha = 0.05 stays
+honest. The scientific cap is recorded in
+`08x_search_space.json.scientific_budget_cap_total_trials` (default value =
+`total_trial_budget_cap_across_all_families` in §5.5 Pre-registration
+Constants Table). 08X MUST stop at the smaller of (compute tier limit,
+scientific cap). The scientific cap exists so that adding more hardware
+does NOT silently widen the search space; widening it requires a new freeze.
 
 ### 11.1 Tier Escalation Rule
 
@@ -1046,6 +1125,12 @@ frozen_seed_list
 frozen_metric_list
 frozen_wording_rule
 paper_safe_score
+paper_safe_score_runner_up         # second-best candidate's score (null if only 1 candidate eligible)
+paper_safe_score_margin            # paper_safe_score - paper_safe_score_runner_up (null if only 1)
+challenger_baseline_id             # optional: N06 LightGBM candidate id used as a parallel
+                                   # shadow-run challenger; null if no challenger declared.
+                                   # 08F MUST NOT use challenger metrics to pick primary/fallback;
+                                   # challenger exists only so the paper can report both.
 frozen_code_git_sha
 frozen_python_env_hash
 frozen_dependency_versions
@@ -1172,34 +1257,43 @@ conformal/risk-control diagnostics
 
 ### 15.1 Before 08X
 
-- Confirm active Stage 0 candidate and freeze document.
-- Confirm raw-data-first data manifest for five tickers.
-- Confirm no holdout/test paths are referenced by active code.
-- Confirm train/validation/closed-holdout boundary markers.
-- Write 08X search-space JSON before running.
-- Write train-inner fold policy before running.
-- Write failure ledger schema before running.
-- Write static gate tests before notebook generation.
+Each "Confirm" line below MUST map to a machine-checkable assertion in
+`08x_entry_gate.json`; the field name is given in parentheses.
+
+- Confirm active Stage 0 candidate and freeze document. (`stage0_candidate_sha256_matches`)
+- Confirm raw-data-first data manifest for five tickers. (`raw_data_manifest_present_and_complete`)
+- Confirm no holdout/test paths are referenced by active code. (`no_holdout_test_paths_referenced`)
+- Confirm train/validation/closed-holdout boundary markers. (`split_boundary_markers_present`)
+- Write 08X search-space JSON before running. (`08x_search_space_json_sha256_present`)
+- Write train-inner fold policy before running. (`train_inner_fold_policy_present`)
+- Write failure ledger schema before running. (`failure_ledger_schema_present`)
+- Write static gate tests before notebook generation. (`static_gate_tests_present`)
 
 ### 15.2 Before 08F
 
-- Confirm 08X ledger includes failed/skipped trials.
-- Confirm no official-validation selection columns are present.
-- Confirm all trial rows have config hashes.
-- Confirm same-row dummy rows exist for train-inner fold comparisons.
+Each "Confirm" line MUST map to a machine-checkable assertion in
+`08f_entry_gate.json`; the field name is given in parentheses.
+
+- Confirm 08X ledger includes failed/skipped trials. (`08x_trial_ledger_includes_failures`)
+- Confirm no official-validation selection columns are present. (`no_official_validation_selection_columns`)
+- Confirm all trial rows have config hashes. (`all_trial_rows_have_config_hash`)
+- Confirm same-row dummy rows exist for train-inner fold comparisons. (`same_row_dummy_present_for_each_trial`)
 - Confirm candidate compression rule was frozen before reading compression
-  outputs.
-- Confirm no candidate relies on holdout/test wording.
+  outputs. (`compression_rule_frozen_before_read`)
+- Confirm no candidate relies on holdout/test wording. (`no_candidate_holdout_wording`)
 
 ### 15.3 Before 08O
 
-- Confirm 08F freeze record exists and hashes match.
-- Confirm primary/fallback activation rule is explicit.
-- Confirm static gate passes.
-- Confirm all `RUN_08O_*` switches are default false until operator edit.
-- Confirm official-validation readout is one-time and frozen.
-- Confirm same-row dummy and per-ticker output schemas are present.
-- Confirm holdout/test remains closed.
+Each "Confirm" line MUST map to a machine-checkable assertion in
+`08o_entry_gate.json`; the field name is given in parentheses.
+
+- Confirm 08F freeze record exists and hashes match. (`08f_freeze_record_sha256_matches`)
+- Confirm primary/fallback activation rule is explicit. (`fallback_activation_rule_explicit`)
+- Confirm static gate passes. (`static_gate_passes`)
+- Confirm all `RUN_08O_*` switches are default false until operator edit. (`run_08o_switches_default_false`)
+- Confirm official-validation readout is one-time and frozen. (`official_validation_readout_one_time_and_frozen`)
+- Confirm same-row dummy and per-ticker output schemas are present. (`same_row_dummy_and_per_ticker_schemas_present`)
+- Confirm holdout/test remains closed. (`holdout_test_closed`)
 
 ---
 

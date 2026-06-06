@@ -278,9 +278,12 @@ Purpose:
 - show full-coverage and selective rows without treating selective rows as threshold-selected winners;
 - report same-row dummy deltas for every comparable row.
 
-Recommended columns:
+Recommended columns (grouped REQUIRED / RECOMMENDED / OPTIONAL; downstream
+static tests assert REQUIRED columns present, RECOMMENDED columns present if
+the corresponding row class exists, and ignore OPTIONAL):
 
 ```text
+# REQUIRED — every row MUST have these:
 artifact_source
 notebook_stage
 model
@@ -315,8 +318,19 @@ retained_n
 abstained_n
 scope
 decision_source
-diagnostic_only
 allowed_wording_tag
+
+# RECOMMENDED — present when row class supports them
+# (profile_id, profile_role, label_config, horizon_k, threshold_bps,
+#  feature_set, window_size, macro_f1_std, balanced_accuracy_std,
+#  dummy_balanced_accuracy_mean, delta_balanced_accuracy_vs_dummy_mean,
+#  always_up_dummy_macro_f1_mean, delta_macro_f1_vs_always_up_dummy_mean,
+#  diagnostic_only)
+diagnostic_only
+
+# OPTIONAL — selective / coverage rows only
+# (coverage, coverage_source, retained_n, abstained_n,
+#  random_abstention_macro_f1_mean, delta_macro_f1_vs_random_abstention_mean)
 ```
 
 Interpretation:
@@ -415,6 +429,14 @@ Purpose:
 - explain locked LightGBM predictions;
 - support paper interpretation without changing features.
 
+Default behavior (appendix-only): on `RUN_07E_EXPLAINABILITY_APPENDIX = True`
+the notebook MUST emit ONLY items 1-2 (split + gain importance). Promoting any
+of items 3-5 to active output requires an explicit operator JSON override
+recorded in `notebook07_decision_and_wording_record.json` under
+`explainability_upgrade_record = { "promoted_items": [...], "reason": "..." }`,
+plus a new `EXPECTED_DESIGN_DOC_SHA256` covering this revision. Items 3-5 are
+appendix-only and never influence §07B / §07H wording.
+
 Allowed low-dependency order:
 
 1. LightGBM split importance.
@@ -490,7 +512,9 @@ score
 observed_score
 null_score_mean
 null_score_p95
-empirical_p_value_or_rank
+p_value_one_sided
+n_permutations
+multiplicity_corrected
 dependency_caveat
 scope = diagnostic
 ```
@@ -530,9 +554,14 @@ evidence_source
 observed_issue
 why_it_matters
 allowed_next_route
+target_route ∈ {08X, 08F, 08O, none}  # 08X consumer asserts target_route=="08X" rows are routed
 forbidden_in_07
 minimum_pre_registration_needed
-priority = must / useful / optional / risky
+priority ∈ {must, useful, optional}
+requires_extra_preregistration: bool  # was previously "risky"; now an explicit
+                                        # boolean so static gates can check it
+                                        # alongside priority instead of overloading
+                                        # the priority enum
 scope
 ```
 
@@ -570,6 +599,18 @@ Permutation importance selects the final feature set.
 ECE/AURC chooses the final threshold.
 The 07 null-control appendix proves generalization.
 ```
+
+Forbidden-phrase regex (07H MUST refuse to emit any paragraph that matches
+the case-insensitive regex below; the kit's
+`forbidden_phrases_blocked_at_runtime` list records every match it blocked):
+
+```text
+\b(final|production|deploy(?:ed|able|ment)?|tradable|live|sharpe|alpha)\b
+```
+
+This is a belt-and-suspenders layer over the explicit "Forbidden wording" list:
+the explicit list catches exact phrases, the regex catches close variants
+(e.g. "production-grade", "near-final", "ready for live", "alpha trading").
 
 Falsification Conditions (pre-registered; recorded in
 `notebook07_thesis_paragraph_kit.json.falsification_conditions`):
@@ -632,6 +673,9 @@ OPERATOR_ACKNOWLEDGES_07_IS_NOT_SEARCH = False
 OPERATOR_ACKNOWLEDGES_NO_HOLDOUT_TEST = False
 OPERATOR_ACKNOWLEDGES_NO_SELECTION_FROM_EXPLANATIONS = False
 OPERATOR_ACKNOWLEDGES_NO_THRESHOLD_SEARCH = False
+EXPECTED_DESIGN_DOC_SHA256 = ""  # sha256 of the 2026-06-06 design at freeze time;
+                                  # 07A asserts hashlib.sha256(open(__file__).read()) ==
+                                  # EXPECTED_DESIGN_DOC_SHA256 before any RUN_07* may set True
 ```
 
 If a run-all copy is ever created, it must be separately named and must not replace the canonical notebook.
@@ -758,6 +802,7 @@ Seed aggregation:
 
 - report mean, std, seed count, and one-sided 95% LCB for macro F1 and key deltas;
 - if only one seed exists, LCB equals the mean and the row must be flagged as weak seed evidence;
+- additionally, `seed_count < 5` for any final-reporting row sets `weak_seed_evidence = True` and the row's `allowed_wording_tag` MUST downgrade to "weak" (per AGENTS.md §4.2.5a);
 - do not treat seed repeats over overlapping validation windows as independent market samples.
 
 Concentration guardrails:
@@ -881,6 +926,7 @@ Required static checks:
 14. Active code contains same-row dummy requirements for final rows.
 15. Active code contains forbidden-wording guardrails.
 16. Active code contains no assignments or functions named `select_threshold`, `best_threshold`, `optimal_threshold`, `optimal_coverage`, `select_feature_subset`, `run_hpo`, or `train_new_model`.
+17. Active code contains no `exec(`, `eval(`, `compile(`, `__import__(`, or `getattr(..., "select_*"|"best_*"|"optimal_*"|"run_hpo")` calls (defense against the item-16 list being bypassed via dynamic dispatch); the static gate AST-walks all code cells and rejects matches.
 
 Suggested artifact-contract tests:
 

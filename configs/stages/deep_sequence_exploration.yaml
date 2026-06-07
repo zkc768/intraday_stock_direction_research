@@ -1,29 +1,523 @@
-# Stage skeleton — frozen / already-designed keys only.
+# Stage design config - frozen / already-designed keys only.
 # Stage name source of truth: configs/pipeline.yaml.
+# Source design:
+# docs/NOTEBOOK08_DEEP_SEQUENCE_EXPLORATION_FREEZE_READOUT_TECHNICAL_DESIGN_2026-06-06.md
 
 stage: deep_sequence_exploration
+semantic_name: deep_sequence_exploration
 scope: validation_only
 holdout_test_contact: false
+implementation_status: design_only_not_executable
+
+governance:
+  resume_gates: docs/NOTEBOOK08_RESUME_GATES.md
+  technical_design: docs/NOTEBOOK08_DEEP_SEQUENCE_EXPLORATION_FREEZE_READOUT_TECHNICAL_DESIGN_2026-06-06.md
+  migration_gate_required_for_substantive_work: true
+  substantive_work_destination:
+    stage_module: src/intraday_research/stages/deep_sequence_exploration.py
+    future_model_package: src/intraday_research/models/deep_sequence/
+  notebook_contract_policy:
+    package_install: git_exact_commit_required
+    allowed_contract_import: intraday_research.contracts.deep_sequence_exploration
+    inline_contract_in_notebook: false
 
 inputs:
-  # N08 is a downstream artifact-first stage: it does NOT read raw bar data;
-  # it consumes upstream official-validation artifacts (N07 + N08X / N08F
-  # candidate ledgers). The manifest file is a Phase 6 placeholder and is
-  # not created yet.
+  # Placeholder manifest; file not created in the migration-safe YAML phase.
   upstream_artifacts_manifest: data/manifests/deep_sequence_exploration_inputs.yaml
+  required_design_inputs:
+    - docs/CONFIG_SCREENING_FREEZE_2026-06-04.md
+    - docs/RESEARCH_WORKFLOW.md
+    - notebooks/02_config_screening_colab.ipynb
+    - scripts/create_config_screening_colab_notebook.py
+    - notebooks/03_model_family_screening_colab.ipynb
+    - scripts/create_model_family_screening_colab_notebook.py
+    - notebooks/04_controlled_followup_colab.ipynb
+    - scripts/create_controlled_followup_colab_notebook.py
+  conditional_gap_audit:
+    path: notebook07_gap_audit_for_08x.csv
+    required_when_07g_emits_target_route_08x: true
+    accepted_resolution_fields:
+      - routed_from_07g_gap_id
+      - deferred_07g_gaps
+  allowed_stage0_anchor_records:
+    - notebook05_decision_record.json
+    - notebook06_decision_record.json
+  forbidden_selection_inputs:
+    - notebook05_official_validation_*.csv
+    - notebook06_*_coverage.csv
+    - notebook06_*_validation_*.csv
+  minimum_frozen_candidate_fields:
+    - label_config
+    - horizon_k
+    - threshold_bps
+    - feature_set
+    - window_size
+    - tickers
+    - train_validation_boundary_dates
+    - closed_holdout_test_boundary_marker
+    - same_day_window_rule
+    - label_horizon_invalidation_rule
+    - train_only_preprocessing_rule
+    - dummy_baseline_rule
 
 outputs:
   results_dir: results/deep_sequence_exploration/
-  run_manifest: artifacts/run_manifests/deep_sequence_exploration/          # gitignored at runtime
+  colab_output_root: /content/notebook08_deep_sequence_results/
+  run_manifest_dir: artifacts/run_manifests/deep_sequence_exploration/
+  artifact_manifest:
+    08x:
+      files:
+        - 08x_search_space.json
+        - 08x_trial_ledger.csv
+        - 08x_fold_results.csv
+        - 08x_seed_summary.csv
+        - 08x_failure_ledger.csv
+        - 08x_candidate_compression_table.csv
+        - 08x_run_manifest.json
+        - 08x_environment_manifest.json
+      required_manifest_fields:
+        - notebook08_version
+        - stage
+        - scope
+        - source_stage0_candidate
+        - official_validation_used
+        - holdout_test_authorized
+        - train_inner_fold_policy
+        - purge_policy
+        - embargo_policy
+        - search_budget_tier
+        - trial_count_requested
+        - trial_count_completed
+        - trial_count_failed
+        - trial_count_skipped
+    08f:
+      files:
+        - 08f_candidate_freeze_record.json
+        - 08f_candidate_freeze_record.md
+        - 08f_candidate_compression_audit.csv
+        - 08f_static_gate_report.json
+        - 08f_no_candidate_freezable.json
+      required_freeze_fields:
+        # Mirrors contracts.deep_sequence_exploration.REQUIRED_FREEZE_RECORD_FIELDS.
+        - stage
+        - scope
+        - primary_candidate_id
+        - fallback_candidate_id
+        - fallback_activation_rule
+        - config_hash
+        - architecture_family
+        - frozen_architecture_params
+        - frozen_loss
+        - frozen_hpo_method
+        - frozen_seed_list
+        - frozen_metric_list
+        - frozen_wording_rule
+        - paper_safe_score
+        - paper_safe_score_runner_up
+        - paper_safe_score_margin
+        - challenger_baseline_id
+        - frozen_code_git_sha
+        - frozen_python_env_hash
+        - frozen_dependency_versions
+        - official_validation_used_for_selection
+        - holdout_test_authorized
+      recommended_freeze_fields:
+        # Mirrors contracts.deep_sequence_exploration.RECOMMENDED_FREEZE_RECORD_FIELDS.
+        # Generator writes by default; contract does not require at write time.
+        # `low_compute_baseline` + `low_compute_submode` drive §10.4 mandatory
+        # automatic wording downgrade for §7.9 low-compute primary candidates.
+        - low_compute_baseline
+        - low_compute_submode
+    08o:
+      files:
+        - 08o_validation_readout.csv
+        - 08o_validation_per_ticker.csv
+        - 08o_seed_summary.csv
+        - 08o_same_row_baselines.csv
+        - 08o_concentration_guardrails.csv
+        - 08o_failure_rows.csv
+        - 08o_decision_record.json
+        - 08o_run_manifest.json
+      required_manifest_fields:
+        - stage
+        - scope
+        - primary_candidate_id
+        - freeze_record_sha256
+        - official_validation_readout_started_at
+        - official_validation_used_for_selection
+        - holdout_test_authorized
+        - same_row_dummy_present
+        - per_ticker_present
+        - seed_summary_present
+        - allowed_wording_bucket
+
+run_switch_defaults:
+  RUN_08X_SCHEMA_SMOKE: false
+  RUN_08X_BUILD_TRAIN_INNER_FOLDS: false
+  RUN_08X_SEARCH_SPACE_DRY_RUN: false
+  RUN_08X_QUICK_SEARCH: false
+  RUN_08X_MEDIUM_SEARCH: false
+  RUN_08X_AGGRESSIVE_SEARCH: false
+  RUN_08X_AGGREGATE_FAILURE_MAP: false
+  RUN_08F_CONTRACT_GATE: false
+  RUN_08F_CANDIDATE_COMPRESSION: false
+  RUN_08F_WRITE_FREEZE_RECORD: false
+  RUN_08O_ENTRY_GATE: false
+  RUN_08O_OFFICIAL_VALIDATION_READOUT: false
+  RUN_08O_AGGREGATE_AND_WRITE_MANIFEST: false
+  BACKUP_NOTEBOOK08_TO_GOOGLE_DRIVE: false
 
 policy:
-  validation_budget_ledger: append_only                                     # AGENTS.md §4.3 append-before-read
+  validation_budget_ledger:
+    path: notebook07_validation_budget_ledger.csv
+    mode: append_only
+    append_before_official_validation_metric_read: true
+  official_validation:
+    allowed_for_08x_selection: false
+    allowed_for_08f_candidate_compression: false
+    readout_requires_operator_authorization_sha: true
+    readout_scope: validation_only
+  holdout_test:
+    authorized: false
+    boundary_marker_only: true
+  preprocessing:
+    fit_statistics_scope: train_inner_fit_rows_only
+    split_per_ticker_before_pooling: true
+  windows:
+    no_cross_ticker_windows: true
+    no_cross_trading_day_windows: true
+    no_label_horizon_crosses_split_boundary: true
+  diagnostics:
+    calibration_and_selective_metrics_are_diagnostic_only: true
+    ece_aurc_not_selection_gates: true
+  fallback:
+    must_activate_before_any_official_validation_metric_inspection: true
+    weak_official_validation_metrics_cannot_activate_fallback: true
+  failure_handling:
+    failed_trials_written_to_ledger: true
+    silent_exception_swallowing_allowed: false
 
 constants:
-  # Same AGENTS.md §4.2.5a thresholds as N07; in the N08 contract they are
-  # spelled IMPROVEMENT_THRESHOLD_DELTA_MACRO_F1_LCB_95 and
-  # IMPROVEMENT_THRESHOLD_POSITIVE_TICKER_COUNT_MIN, but their values mirror
-  # the N07 source-of-truth in
-  # src/intraday_research/contracts/validation_synthesis_gap_audit.py.
-  improvement_lcb_min: 0.005
-  improvement_ticker_count_min: 4
+  # Mirrors src/intraday_research/contracts/deep_sequence_exploration.py.
+  improvement_threshold_delta_macro_f1_lcb_95: 0.005
+  improvement_threshold_positive_ticker_count_min: 4
+  fusion_min_lcb_advantage_over_components: 0.003
+  candidate_eligibility_min_train_inner_lcb_delta: 0.005
+  paper_safe_score_weight_lcb_delta: 0.35
+  paper_safe_score_weight_mean_delta: 0.20
+  paper_safe_score_weight_seed_stability: 0.15
+  paper_safe_score_weight_fold_consistency: 0.10
+  paper_safe_score_weight_per_ticker: 0.10
+  paper_safe_score_penalty_complexity: -0.05
+  paper_safe_score_penalty_compute: -0.05
+  class_collapse_pred_rate_min: 0.05
+  total_trial_budget_cap_across_all_families: 250
+  tier_escalation_quick_to_medium_lcb_delta_min: 0.003
+  tier_escalation_quick_to_medium_positive_ticker_min: 4
+  tier_escalation_medium_to_aggressive_seed_std_max: 0.01
+
+search_space:
+  architecture_families:
+    - ms_dlinear_tcn
+    - dlinear_only
+    - tcn_only
+    - shallow_gru
+    - shallow_lstm
+    - last_step_mlp_sequence_ablation
+    - last_step_lightgbm_control
+  dlinear:
+    moving_avg_kernel: [3, 5, 7, 11]
+    individual_channels: [false, true]
+    linear_head: [shared, per_channel]
+    seasonal_trend_dropout: [0.0, 0.05, 0.10]
+    input_projection: [none, linear_bottleneck]
+  tcn:
+    num_blocks: [2, 3, 4]
+    channels:
+      - [16, 16]
+      - [32, 32]
+      - [32, 32, 32]
+      - [64, 32, 16]
+    kernel_size: [2, 3, 5]
+    dilation_base: 2
+    dropout: [0.0, 0.05, 0.10, 0.20]
+    residual: true
+    gating: [false, true]
+    normalization: [none, weight_norm, layer_norm]
+    causal: true
+    head: [last_step, attention_pooling_pre_frozen]
+  fusion_variants:
+    - dlinear_trend_plus_tcn_residual
+    - dlinear_logits_plus_tcn_logits
+    - late_average_probabilities
+    - small_fusion_mlp
+  losses:
+    - cross_entropy
+    - weighted_cross_entropy_train_prior
+    - focal_loss
+    - class_balanced_loss_effective_number
+    - balanced_softmax
+  hpo_methods:
+    - random_search
+    - tpe
+    - successive_halving
+    - asha
+    - hyperband
+    - bohb
+  hpo_policy:
+    one_method_per_run: true
+    method_sha256_stamped_before_trial_zero: true
+    pbt_default_allowed: false
+  ensembles_allowed_if_frozen_before_official_validation:
+    - seed_mean_probability_ensemble
+    - top_k_train_inner_lcb_ensemble
+    - snapshot_ensemble_with_predeclared_epochs
+  calibration_selective_diagnostics_train_inner_only:
+    - brier_score
+    - log_loss
+    - ece_uniform_bins
+    - ece_quantile_bins
+    - risk_coverage_curve
+    - aurc
+    - fixed_coverage_grid
+    - same_row_dummy_at_coverage
+    - random_abstention_at_coverage
+  low_compute_mode:
+    allowed: true
+    submodes:
+      - deterministic_agg
+      - train_inner_oof_mlp_head
+    train_inner_oof_mlp_head_default_forbidden: true
+    required_unlock_fields:
+      - outer_fold_scheme
+      - outer_fold_k
+      - inner_fold_k_for_head
+      - head_train_data_source
+      - head_eval_data_source
+    min_outer_fold_k: 5
+    min_inner_fold_k_for_head: 5
+    low_compute_primary_forces_wording_bucket: weak_mixed
+    score_pool: separate_z_in_tier
+
+validation_design:
+  data_partition:
+    08x_allowed_partition: official_train_only
+    official_validation_read_by_08x: false
+    holdout_test_use: boundary_marker_only
+  fold_modes:
+    - rolling_origin_folds
+    - purged_time_series_folds
+    - embargoed_train_inner_folds
+  fold_requirements:
+    - split_per_ticker_chronologically_before_pooling
+    - no_label_horizon_overlap_with_inner_validation
+    - no_input_window_crosses_trading_day
+    - no_input_window_crosses_ticker
+    - preprocessing_fit_on_train_inner_fit_only
+  trial_ledger_required_columns:
+    - trial_id
+    - candidate_family
+    - candidate_id
+    - config_hash
+    - fold_id
+    - seed
+    - budget_tier
+    - max_epochs
+    - actual_epochs
+    - early_stop_reason
+    - fit_status
+    - failure_type
+    - failure_message
+    - train_inner_fit_n
+    - train_inner_validation_n
+    - macro_f1
+    - balanced_accuracy
+    - accuracy
+    - stratified_dummy_macro_f1_same_rows
+    - delta_macro_f1_vs_dummy
+    - class0_pred_rate
+    - class1_pred_rate
+    - ticker_max_share
+    - actual_wall_clock_seconds
+    - peak_memory_mb
+    - gpu_seconds_or_null
+    - compute_tier
+    - scope
+    - official_validation_used
+    - holdout_test_authorized
+  compute_tier_values:
+    - full_compute
+    - low_compute
+  failure_types:
+    # Mirrors contracts.deep_sequence_exploration.FAILURE_TYPES (14 entries).
+    - class_collapse
+    - unstable_seed_variance
+    - ticker_concentration
+    - date_concentration
+    - time_of_day_concentration
+    - training_divergence
+    - timeout
+    - memory_error
+    - artifact_schema_failure
+    - official_validation_boundary_violation
+    - feature_window_leak_detected         # §8.4 automated detector; manual override forbidden
+    - insufficient_same_row_dummy          # §8.4
+    - no_improvement_over_last_step_control # §8.4 + §9.4 hard stop
+    - not_implemented                      # MVP placeholder for unstubbed deep families
+  fit_statuses:
+    # Mirrors contracts.deep_sequence_exploration.FIT_STATUSES (§8.3).
+    # `pending` / `pending_last_step_lightgbm` are MVP pre-fit placeholders
+    # the operator overwrites with a terminal status before a row counts as
+    # evidence. `completed` / `failed` are terminal; `skipped` covers
+    # tier-escalation-gate refusals (§11.1) that never ran.
+    - pending
+    - pending_last_step_lightgbm
+    - completed
+    - failed
+    - skipped
+
+candidate_compression_08f:
+  separate_session_or_dmc_attestation_required: true
+  dmc_attestation_fields:
+    - dmc_role
+    - reviewer_identifier
+    - reviewed_08x_run_manifest_sha256
+    - reviewed_at_utc
+    - attestation_statement
+  eligibility:
+    complete_trial_or_failure_rows_required: true
+    min_train_inner_lcb_delta_macro_f1: 0.005
+    must_beat_simple_sequence_controls_same_budget: true
+    avoid_class_collapse: true
+    avoid_severe_ticker_concentration: true
+    official_validation_selection_contact_allowed: false
+    reproducible_config_hash_required: true
+  paper_safe_score:
+    lcb_delta_weight: 0.35
+    mean_delta_balanced_accuracy_weight: 0.20
+    seed_stability_weight: 0.15
+    fold_consistency_weight: 0.10
+    per_ticker_consistency_weight: 0.10
+    complexity_penalty_weight: -0.05
+    compute_penalty_weight: -0.05
+    z_normalization_scope: same_compute_tier_only
+    tier_with_less_than_two_completed_trials_penalty_term: 0
+  hard_stop_if:
+    - no_positive_train_inner_lcb_delta_vs_same_row_dummy
+    - deep_candidate_fails_to_beat_last_step_controls
+    - severe_ticker_concentration
+    - official_validation_feedback_used
+    - loss_threshold_or_ensemble_changed_without_predeclared_rule
+    - failed_or_skipped_trials_missing_from_ledger
+    - config_hash_not_reproducible
+    - requires_holdout_test_wording_to_sound_meaningful
+
+official_validation_readout_08o:
+  entry_gates:
+    required_files:
+      - 08f_candidate_freeze_record.json
+      - 08f_candidate_freeze_record.md
+      - 08f_static_gate_report.json
+    required_booleans:
+      holdout_test_authorized: false
+      official_validation_used_for_selection: false
+      RUN_08O_OFFICIAL_VALIDATION_READOUT: true
+    authorization_sha_inputs_fixed_order:
+      - path: 08f_candidate_freeze_record.json
+        mode: json_canonical
+      - path: docs/NOTEBOOK08_DEEP_SEQUENCE_EXPLORATION_FREEZE_READOUT_TECHNICAL_DESIGN_2026-06-06.md
+        mode: text_lf
+      - path: AGENTS.md
+        mode: text_lf
+  readout_rules:
+    - append_validation_budget_ledger_intent_before_metric_read
+    - read_only_active_official_validation_rows
+    - use_same_label_feature_window_boundary_rules_as_stage0
+    - fit_preprocessing_on_training_rows_only
+    - fit_frozen_candidate_exactly_as_08f_specified
+    - score_official_validation_once_per_frozen_seed
+    - compute_same_row_stratified_dummy_and_always_up_dummy
+    - write_pooled_per_ticker_per_seed_and_seed_summary_outputs
+    - write_failure_rows_for_failed_seeds
+  required_primary_metrics:
+    - macro_f1
+    - balanced_accuracy
+    - delta_macro_f1_vs_stratified_dummy_same_rows
+    - delta_balanced_accuracy_vs_stratified_dummy_same_rows
+  required_supporting_metrics:
+    - accuracy
+    - confusion_matrix_counts
+    - validation_n
+    - train_class0_n
+    - train_class1_n
+    - train_positive_rate
+    - class0_pred_rate
+    - class1_pred_rate
+    - seed_mean
+    - seed_std
+    - seed_lcb_95
+    - per_ticker_macro_f1
+    - per_ticker_delta_macro_f1_vs_dummy
+    - ticker_max_share
+    - date_time_concentration_diagnostics
+  optional_diagnostic_metrics:
+    - brier_score
+    - log_loss
+    - ece_uniform_bins
+    - ece_quantile_bins
+    - aurc
+    - risk_coverage_curve
+    - fixed_coverage_grid
+    - permutation_importance
+    - shap_pred_contrib
+  wording:
+    allowed_buckets:
+      # Mirrors contracts.deep_sequence_exploration.ALLOWED_WORDING_BUCKETS.
+      # 08O run manifest's `allowed_wording_bucket` MUST take one of these
+      # values; the schema-only-stub manifest is hard-forced to
+      # `no_candidate_freezable` per Round 7 finding #1 + Round 8 finding #1.
+      - improvement
+      - weak_mixed
+      - low_compute_baseline
+      - no_candidate_freezable
+      - unstable
+    improvement_allowed_only_if:
+      delta_macro_f1_vs_dummy_lcb_95_min: 0.005
+      positive_ticker_count_min: 4
+      low_compute_baseline: false
+    low_compute_baseline_forces_bucket: weak_mixed
+    forbidden_claims:
+      - holdout_validated
+      - official_validation_selected_architecture
+      - deep_sequence_models_proven
+      - tradable_deployable_or_profitable
+      - invalidates_notebooks_02_to_06_route
+
+budget_tiers:
+  quick:
+    intended_use: static_smoke_plus_tiny_train_inner_feasibility
+    approx_configs_or_fits: 4-8
+    approx_folds: 1-2
+    approx_seeds: 1-2
+  medium:
+    intended_use: candidate_family_comparison
+    approx_configs_or_fits: 20-40
+    approx_folds: 3
+    approx_seeds: 3
+  aggressive:
+    intended_use: deep_sequence_discovery_and_failure_map
+    approx_configs_or_fits: 80-200
+    approx_folds: 3-5
+    approx_seeds: 5
+  paper_safe_subset:
+    intended_use: freeze_eligible_subset_after_08x
+    candidates: 1_primary_plus_1_fallback
+  accounting:
+    count_failed_timed_out_skipped_and_early_stopped_trials: true
+    scientific_budget_cap_total_trials: 250
+  escalation:
+    quick_to_medium:
+      min_lcb_delta_vs_last_step_lightgbm_control: 0.003
+      min_positive_ticker_count: 4
+    medium_to_aggressive:
+      max_seed_std_macro_f1: 0.01

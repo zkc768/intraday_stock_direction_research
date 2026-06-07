@@ -38,7 +38,7 @@ README examples, run manifests, and historical notes.
 | `notebooks/05_lightgbm_tuning_colab.ipynb` | `notebooks/lightgbm_tuning_colab.ipynb` | Rename after generator relocation |
 | `notebooks/06_selective_no_trade_calibration_colab.ipynb` | `notebooks/selective_no_trade_calibration_colab.ipynb` | Rename after contract migration |
 | `notebooks/07_validation_synthesis_and_gap_audit_colab.ipynb` | `notebooks/validation_synthesis_gap_audit_colab.ipynb` | Rename after N07 package entrypoint exists |
-| `notebooks/08_deep_sequence_exploration_colab.ipynb` | `notebooks/deep_sequence_exploration_colab.ipynb` | Rename after N08 package entrypoint exists |
+| `notebooks/08_deep_sequence_exploration_colab.ipynb` | `notebooks/deep_sequence_exploration_colab.ipynb` | RENAMED 2026-06-06 (Phase 7); substantive work goes into src/intraday_research/stages/ + models/deep_sequence/ |
 
 ## Non-Canonical Notebook Files
 

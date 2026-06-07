@@ -1,4 +1,12 @@
-"""Generate ``notebooks/08_deep_sequence_exploration_colab.ipynb``.
+"""Generate ``notebooks/deep_sequence_exploration_colab.ipynb``.
+
+Phase 7 (2026-06-06) renamed the target from
+``notebooks/08_deep_sequence_exploration_colab.ipynb`` to the semantic name
+above. The generator path itself (``scripts/create_deep_sequence_exploration_colab_notebook.py``)
+remains until Phase 5 generator relocation; substantive deep-model work goes
+into ``src/intraday_research/stages/`` and ``src/intraday_research/models/``,
+not into this generator (see docs/NOTEBOOK08_RESUME_GATES.md §4 + §5).
+
 
 Builds Notebook 08 per
 ``docs/NOTEBOOK08_DEEP_SEQUENCE_EXPLORATION_FREEZE_READOUT_TECHNICAL_DESIGN_2026-06-06.md``.
@@ -68,7 +76,7 @@ CONTRACT_MODULE = (
 # path is a thin re-export shim; reading it here would inline only ~21 lines
 # of imports and break the generated notebook's downstream cells. Always read
 # CONTRACT_MODULE from the canonical src path.
-TARGET_NOTEBOOK = PROJECT_ROOT / "notebooks" / "08_deep_sequence_exploration_colab.ipynb"
+TARGET_NOTEBOOK = PROJECT_ROOT / "notebooks" / "deep_sequence_exploration_colab.ipynb"
 
 
 # ===========================================================================

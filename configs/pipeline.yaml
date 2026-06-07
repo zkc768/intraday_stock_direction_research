@@ -152,6 +152,7 @@ stages:
     depends_on: [validation_synthesis_gap_audit]
     notebook: notebooks/deep_sequence_exploration_colab.ipynb
     legacy_paths:
+      # notebook RENAMED 2026-06-06 (Phase 7); breadcrumb only, no longer on disk.
       notebook: notebooks/08_deep_sequence_exploration_colab.ipynb
       generator: scripts/create_deep_sequence_exploration_colab_notebook.py
       contract: scripts/notebook08_contract.py

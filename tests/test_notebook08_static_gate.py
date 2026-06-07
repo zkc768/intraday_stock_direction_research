@@ -20,7 +20,9 @@ import pytest
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
-NOTEBOOK_PATH = PROJECT_ROOT / "notebooks" / "08_deep_sequence_exploration_colab.ipynb"
+# Renamed 2026-06-06 (Phase 7 semantic rename); legacy path was
+# `notebooks/08_deep_sequence_exploration_colab.ipynb`.
+NOTEBOOK_PATH = PROJECT_ROOT / "notebooks" / "deep_sequence_exploration_colab.ipynb"
 DESIGN_PATH = (
     PROJECT_ROOT
     / "docs"

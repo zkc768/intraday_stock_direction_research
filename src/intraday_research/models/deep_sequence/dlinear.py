@@ -223,6 +223,11 @@ class DLinearClassifier:
                 f"{where}: X must be a 3-D ndarray (n, window_size, "
                 f"n_features); got shape {shape}"
             )
+        if X.shape[1] < 1 or X.shape[2] < 1:
+            raise ValueError(
+                f"{where}: X window_size and n_features must be positive; "
+                f"got shape {X.shape}"
+            )
         if not np.issubdtype(X.dtype, np.floating):
             raise ValueError(f"{where}: X must be a float ndarray; got {X.dtype}")
         if not np.isfinite(X).all():
@@ -274,8 +279,7 @@ class DLinearClassifier:
         torch.use_deterministic_algorithms(True)
         try:
             torch.manual_seed(self.random_state)
-            rng = np.random.default_rng(self.random_state)
-            fit_idx, val_idx = self._early_stop_split(y_arr, rng)
+            fit_idx, val_idx = self._early_stop_split(y_arr)
             self.internal_val_n_ = 0 if val_idx is None else int(val_idx.size)
 
             model = _DLinearModule(
@@ -287,7 +291,7 @@ class DLinearClassifier:
                 seasonal_trend_dropout=self.seasonal_trend_dropout,
                 input_projection=self.input_projection,
             )
-            self._train(model, x_arr, y_arr, fit_idx, val_idx, rng)
+            self._train(model, x_arr, y_arr, fit_idx, val_idx)
             self._model = model
             self._window_size = window_size
             self._n_features = n_features
@@ -298,20 +302,24 @@ class DLinearClassifier:
             torch.random.set_rng_state(prev_rng_state)
         return self
 
-    def _early_stop_split(
-        self, y: np.ndarray, rng: np.random.Generator
-    ) -> tuple[np.ndarray, np.ndarray | None]:
-        """Seeded internal split used ONLY for early stopping. Falls back to
-        no-split when the data cannot spare a both-class fit set + non-empty
-        val set."""
+    def _early_stop_split(self, y: np.ndarray) -> tuple[np.ndarray, np.ndarray | None]:
+        """Chronological-tail split used ONLY for early stopping.
+
+        Random internal splits are forbidden by AGENTS.md section 4.1. The
+        caller is responsible for passing rows in a chronology-safe order; this
+        method preserves that order and takes the tail as the monitoring slice.
+        It falls back to no-split when the data cannot spare a both-class fit
+        prefix plus a non-empty tail.
+        """
         n = y.shape[0]
         n_val = int(round(n * self.early_stopping_fraction))
         if n_val >= 1 and (n - n_val) >= 2:
-            perm = rng.permutation(n)
-            cand_val, cand_fit = perm[:n_val], perm[n_val:]
+            split_at = n - n_val
+            cand_fit = np.arange(split_at, dtype=np.int64)
+            cand_val = np.arange(split_at, n, dtype=np.int64)
             if set(int(v) for v in np.unique(y[cand_fit])) == {0, 1} and cand_val.size:
                 return cand_fit, cand_val
-        return np.arange(n), None
+        return np.arange(n, dtype=np.int64), None
 
     def _train(
         self,
@@ -320,7 +328,6 @@ class DLinearClassifier:
         y_arr: np.ndarray,
         fit_idx: np.ndarray,
         val_idx: np.ndarray | None,
-        rng: np.random.Generator,
     ) -> None:
         x_t = torch.from_numpy(x_arr)
         y_t = torch.from_numpy(y_arr)
@@ -336,7 +343,7 @@ class DLinearClassifier:
 
         for epoch in range(self.max_epochs):
             model.train()
-            order = rng.permutation(fit_idx)
+            order = fit_idx
             for start in range(0, order.size, self.batch_size):
                 batch = order[start: start + self.batch_size]
                 idx = torch.from_numpy(np.ascontiguousarray(batch))

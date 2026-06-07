@@ -84,6 +84,17 @@ def test_fit_restores_global_deterministic_state():
     assert torch.equal(torch.random.get_rng_state(), before_rng)
 
 
+def test_internal_early_stop_split_is_chronological_tail_not_random():
+    # AGENTS.md §4.1 forbids random splits / shuffled validation. The model body
+    # may only reserve a tail slice from the already chronology-safe fit order.
+    y = np.array([0, 1] * 10, dtype=np.int8)
+    fit_idx, val_idx = DLinearClassifier(
+        random_state=0, early_stopping_fraction=0.20
+    )._early_stop_split(y)
+    np.testing.assert_array_equal(fit_idx, np.arange(16, dtype=np.int64))
+    np.testing.assert_array_equal(val_idx, np.arange(16, 20, dtype=np.int64))
+
+
 # --------------------------------------------------------------------------
 # 3. Sequence-only signal (proves the temporal path beats a last-step shortcut)
 # --------------------------------------------------------------------------
@@ -191,6 +202,14 @@ def test_reject_x_not_3d():
     clf = DLinearClassifier(random_state=0)
     with pytest.raises(ValueError, match="3-D"):
         clf.fit(np.zeros((10, 20), dtype=np.float64), np.zeros(10, dtype=np.int8))
+
+
+@pytest.mark.parametrize("shape", [(10, 0, 3), (10, 20, 0)])
+def test_reject_x_empty_temporal_or_feature_axis(shape):
+    X = np.zeros(shape, dtype=np.float64)
+    y = np.array([0, 1] * 5, dtype=np.int8)
+    with pytest.raises(ValueError, match="window_size and n_features"):
+        DLinearClassifier(random_state=0).fit(X, y)
 
 
 def test_reject_x_non_finite():

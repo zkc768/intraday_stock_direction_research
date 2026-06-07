@@ -110,22 +110,22 @@ family-specific keyword arguments"), with budget-tier-friendly defaults:
 | `learning_rate` | 1e-3 | Adam lr |
 | `batch_size` | 256 | minibatch; full-batch when `n < batch_size` |
 | `early_stopping_patience` | 5 | epochs without val-loss improvement before stop |
-| `early_stopping_fraction` | 0.15 | seeded internal split of `X` used ONLY for early stopping |
+| `early_stopping_fraction` | 0.15 | chronological-tail internal split of `X` used ONLY for early stopping |
 | `weight_decay` | 0.0 | Adam L2 |
 
 - **Optimizer/loss:** Adam + `CrossEntropyLoss` (the §7.5 default;
   weighted/focal/etc. are a separate later loss piece, not this body).
-- **Internal early-stop split:** `fit` carves a seeded random
+- **Internal early-stop split:** `fit` carves the chronological tail
   `early_stopping_fraction` slice of `(X, y)` for early-stop monitoring **only**.
   This split lives entirely inside the caller's train-inner-fit rows, never
   touches the harness's train-inner-validation or any official partition, and
   gates training **duration only** — not candidate selection (08F does that).
-  If `n` is too small to spare a non-empty, both-class internal val split,
-  `fit` trains to `max_epochs` with `early_stop_reason="no_internal_val"`.
+  Random internal splits are forbidden by AGENTS.md section 4.1. If `n` is too
+  small to spare a non-empty tail plus a both-class fit prefix, `fit` trains to
+  `max_epochs` with `early_stop_reason="no_internal_val"`.
 - **Determinism (REQUIRED — reproducibility-critical research; Codex P2):**
-  `fit` seeds `torch.manual_seed(random_state)` and uses a local
-  `numpy.random.default_rng(random_state)` for the early-stop split and the
-  per-epoch shuffle index (no global numpy seeding). All batching is in-process
+  `fit` seeds `torch.manual_seed(random_state)` for torch module
+  initialization. Mini-batches preserve the caller-provided row order. All batching is in-process
   (NO multi-worker DataLoader; if a DataLoader is used, `num_workers=0`). `fit`
   saves and **restores after returning** any global torch state it changes —
   `torch.use_deterministic_algorithms(True)` and the thread count — so it does
@@ -141,8 +141,8 @@ family-specific keyword arguments"), with budget-tier-friendly defaults:
   `{"patience", "max_epochs", "no_internal_val"}`), `internal_val_n_` (int rows
   held out for early stopping; 0 on the `no_internal_val` path), and the
   early-stop policy is fully determined by the frozen kwargs
-  (`max_epochs`, `early_stopping_patience`, `early_stopping_fraction`) + the
-  `random_state`-derived split seed. No ledger row is written here (that is the
+  (`max_epochs`, `early_stopping_patience`, `early_stopping_fraction`,
+  `internal_split_policy="chronological_tail"`). No ledger row is written here (that is the
   harness's job) — the body only exposes the fields so the harness can record
   them and so no hidden training budget escapes accounting.
 
@@ -153,7 +153,7 @@ family-specific keyword arguments"), with budget-tier-friendly defaults:
 | 1 | any `__init__` axis fails its §4 **exact-type** check or is outside its frozen set (incl. `individual_channels=1`, `seasonal_trend_dropout=False`, `moving_avg_kernel=True`) | `TypeError`/`ValueError` |
 | 2 | `random_state` is None, `bool`, or not exactly `int` | `TypeError`/`ValueError` |
 | 3 | training kwarg wrong type (`bool` for an int/float kwarg) or out of range (`max_epochs<1`, `learning_rate<=0`, `batch_size<1`, `early_stopping_patience<1`, `early_stopping_fraction` ∉ (0,1), `weight_decay<0`) | `TypeError`/`ValueError` |
-| 4 | `X` not a 3-D float ndarray, or `predict_proba` before `fit` | `ValueError` |
+| 4 | `X` not a 3-D float ndarray, `window_size < 1`, `n_features < 1`, or `predict_proba` before `fit` | `ValueError` |
 | 5 | `X` not finite (NaN/inf) | `ValueError` |
 | 6 | `fit`: `y` not 1-D int in `{0,1}`, or `len(y) != len(X)` | `ValueError` |
 | 7 | `fit`: `y` has a single class | `ValueError` |
@@ -169,19 +169,23 @@ No GPU; CPU only; small synthetic arrays; fast.
    seed → bit-exact `predict_proba`; different seeds → may differ; AND after
    `fit` returns, `torch.are_deterministic_algorithms_enabled()` and the torch
    thread count equal their pre-fit values (the fit restored them).
-3. **Learns a SEQUENCE-ONLY signal (Codex P2):** synthetic windows whose label
+3. **Chronology guard:** internal early-stop split is a tail slice in the
+   provided sample order, never a random permutation; mini-batches preserve
+   fit-row order.
+4. **Learns a SEQUENCE-ONLY signal (Codex P2):** synthetic windows whose label
    depends on the *temporal shape*, not the last step — e.g. all windows share
    the same final-bar value but differ in early-vs-late slope sign. Train
    accuracy clearly above 0.5 proves the DLinear temporal path works and is not
    a last-step shortcut (a last-step-only model would be at chance here). Kept
    loose to avoid flakiness.
-4. **Search-axis coverage:** parametrize each §4 axis over its frozen set,
+5. **Search-axis coverage:** parametrize each §4 axis over its frozen set,
    assert `fit`+`predict_proba` run and shape-conform (incl. `individual_channels`
    True/False, both heads, `linear_bottleneck`, each kernel, each dropout).
-5. **Guards:** all §6 error modes (bad axis value, `random_state=None`/bool,
-   out-of-range training kwargs, 2-D X, non-finite X, single-class y, length
-   mismatch, predict-before-fit, shape drift at predict).
-6. **Early-stop bookkeeping:** a tiny `max_epochs`/`patience` run sets
+6. **Guards:** all §6 error modes (bad axis value, `random_state=None`/bool,
+   out-of-range training kwargs, 2-D X, empty temporal/feature axis,
+   non-finite X, single-class y, length mismatch, predict-before-fit, shape
+   drift at predict).
+7. **Early-stop bookkeeping:** a tiny `max_epochs`/`patience` run sets
    `actual_epochs_ <= max_epochs` and a valid `early_stop_reason_`; the
    `no_internal_val` path fires when `n` is too small.
 
@@ -209,11 +213,11 @@ determinism pattern.
 
 ## 10. Resolved Design Decisions (Codex-reviewed 2026-06-07)
 
-1. **Internal early-stop split = random (seeded), not chronological.** It gates
+1. **Internal early-stop split = chronological tail, not random.** It gates
    training duration only, lives within the caller's train-inner-fit rows, and
-   never selects a candidate. Codex confirmed this is NOT an official-validation
-   leak, with the §5 condition that the policy + `internal_val_n_` enter the
-   trial-ledger/config surface (now specified). Kept as-is.
+   never selects a candidate. A later adversarial review tightened the Codex
+   design-review decision because AGENTS.md section 4.1 forbids random splits
+   and shuffled validation.
 2. **Temporal collapse `L → 1`** (one learned linear filter per channel/
    component — not a last-step read). Codex confirmed this fits DLinear's
    small-model / linear-sequence-bias role; `L → H>1` is a future capacity axis,

@@ -595,7 +595,7 @@ When future compute budget is exhausted but a deep-sequence comparison is still
 desired, 08X may declare a `low_compute_mode = True` in
 `08x_search_space.json`. This mode is restricted to **two strictly mutually
 exclusive sub-modes**, declared by `low_compute_submode ∈ {"deterministic_agg",
-"train_inner_oof_head"}`:
+"train_inner_oof_mlp_head"}`:
 
 ```text
 # Sub-mode A: deterministic_agg — NO trainable head; any aggregation rule
@@ -648,7 +648,7 @@ that violates any of these):
 - any post-fit fine-tune step that touches official-validation data.
 
 Low-compute mode MUST report `compute_penalty` based on the actual seconds
-(deterministic_agg ≈ 0; train_inner_oof_head: actual wall-clock from §8.3
+(deterministic_agg ≈ 0; train_inner_oof_mlp_head: actual wall-clock from §8.3
 `actual_wall_clock_seconds`). The §9.2 scoring formula uses **z_in_tier** —
 low-compute candidates form a SEPARATE z-score pool from full-compute
 candidates; 08F MUST NOT rank a low-compute candidate against full-compute

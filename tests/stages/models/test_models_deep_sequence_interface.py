@@ -48,7 +48,6 @@ _ALL_FAMILIES = [
 # families land in #5A, #5C, ..., they move out of this list and into their
 # own behavioral test file (e.g. test_last_step_lightgbm_control.py for #5A).
 _NOT_YET_IMPLEMENTED_FAMILIES = [
-    DLinearClassifier,
     TCNClassifier,
     ShallowGRUClassifier,
     ShallowLSTMClassifier,

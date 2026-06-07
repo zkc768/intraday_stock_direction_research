@@ -29,12 +29,29 @@ from intraday_research.models.deep_sequence.lstm import ShallowLSTMClassifier
 from intraday_research.models.deep_sequence.tcn import TCNClassifier
 
 
+# All 10 families satisfy the SequenceClassifier protocol regardless of
+# whether their fit/predict_proba bodies are implemented yet.
 _ALL_FAMILIES = [
     DLinearClassifier,
     TCNClassifier,
     ShallowGRUClassifier,
     ShallowLSTMClassifier,
     LastStepLightGBMControl,
+    LastStepMLPSequenceAblation,
+    DLinearTrendPlusTCNResidualFusion,
+    DLinearLogitsPlusTCNLogitsFusion,
+    LateAverageProbabilitiesFusion,
+    SmallFusionMLP,
+]
+
+# Subset that still raises NotImplementedError on fit / predict_proba. As
+# families land in #5A, #5C, ..., they move out of this list and into their
+# own behavioral test file (e.g. test_last_step_lightgbm_control.py for #5A).
+_NOT_YET_IMPLEMENTED_FAMILIES = [
+    DLinearClassifier,
+    TCNClassifier,
+    ShallowGRUClassifier,
+    ShallowLSTMClassifier,
     LastStepMLPSequenceAblation,
     DLinearTrendPlusTCNResidualFusion,
     DLinearLogitsPlusTCNLogitsFusion,
@@ -53,7 +70,7 @@ def test_family_satisfies_sequence_classifier_protocol(cls):
     )
 
 
-@pytest.mark.parametrize("cls", _ALL_FAMILIES)
+@pytest.mark.parametrize("cls", _NOT_YET_IMPLEMENTED_FAMILIES)
 def test_fit_raises_not_implemented_with_scaffold_anchor(cls):
     instance = cls()
     X = np.zeros((4, 20, 3), dtype=np.float32)
@@ -62,7 +79,7 @@ def test_fit_raises_not_implemented_with_scaffold_anchor(cls):
         instance.fit(X, y)
 
 
-@pytest.mark.parametrize("cls", _ALL_FAMILIES)
+@pytest.mark.parametrize("cls", _NOT_YET_IMPLEMENTED_FAMILIES)
 def test_predict_proba_raises_not_implemented_with_scaffold_anchor(cls):
     instance = cls()
     X = np.zeros((4, 20, 3), dtype=np.float32)

@@ -2,23 +2,35 @@
 
 Three allowed fold modes:
   - ``rolling_origin_folds``        expanding-window train / inner-validation
-                                    with label-horizon embargo (implemented #5B)
-  - ``purged_time_series_folds``    train rows whose label horizon overlaps
-                                    inner-validation are dropped (scaffold)
-  - ``embargoed_train_inner_folds``  purged + an additional embargo gap
+                                    with a label-horizon purge at the fold's
+                                    validation boundary (implemented #5B)
+  - ``purged_time_series_folds``    same purge applied to every train row whose
+                                    label horizon reaches inner-validation
                                     (scaffold)
+  - ``embargoed_train_inner_folds``  purge plus an extra embargo gap on both
+                                    sides of inner-validation (scaffold)
 
-Section 8.2 requirements (also AGENTS.md section 4.1):
-  - split per ticker chronologically before pooling
-  - no fold may train on a label horizon overlapping its inner-validation
-  - no input window may cross trading-day boundaries  (upstream, window-build)
-  - no input window may cross ticker boundaries       (upstream, window-build)
-  - preprocessing statistics fit on train-inner-fit rows only (upstream)
+Responsibility layers (a fold builder owns only layer 1):
+
+1. Fold builder (THIS module): split each ticker's samples chronologically,
+   then choose ``(train_inner_fit_idx, train_inner_val_idx)``. It enforces the
+   label-horizon PURGE: a train row ``t`` is excluded when its forward label
+   horizon ``[t, t + label_horizon_k]`` reaches the inner-validation interval
+   (``t + label_horizon_k`` lands at or past the validation start), since that
+   label is derived from bars the fold validates on. "Overlap" throughout this
+   module means exactly this reach. An EMBARGO is a purge plus an additional
+   fixed gap; for a tail validation block (rolling-origin) the two coincide.
+2. Window builder (upstream, ``data/windows.py`` #5C-5): no input window may
+   cross a trading-day or ticker boundary; ``window_size`` and stride are fixed
+   there. Fold indices are positional into that already-windowed, per-ticker
+   chronologically-ordered sample frame.
+3. Preprocessing (upstream): scaling / statistics are fit on train-inner-fit
+   rows only (AGENTS.md section 4.1), never on inner-validation or holdout.
 
 These builders return iterables of ``(train_inner_fit_idx, train_inner_val_idx)``
-pairs in chronological order. Idx are positional into the pooled, per-ticker
-sorted sample frame; the upstream sample frame is responsible for honoring
-the trading-day / ticker / preprocessing-statistics invariants.
+pairs in chronological order. Indices are positional into the pooled, per-ticker
+sorted sample frame; the upstream frame is responsible for honoring the
+trading-day / ticker / preprocessing-statistics invariants in layers 2-3.
 """
 
 from __future__ import annotations

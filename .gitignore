@@ -90,3 +90,7 @@ artifacts/stage0_desktop_*/
 # Workspace session context dumps at the project root (CK's claude-workspace
 # CLAUDE.md leaks into the project tree but holds no project-side meaning).
 /CLAUDE.md
+# Overnight Ralph-loop orchestration scratch (mutable per-run state written by
+# the worker; never part of a feature commit). Keep out of git so it does not
+# pollute the per-piece diff-scope check.
+docs/superpowers/runlog/

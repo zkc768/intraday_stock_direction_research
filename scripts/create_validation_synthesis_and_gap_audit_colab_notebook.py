@@ -104,7 +104,7 @@ LOCKED_CANDIDATE_TUPLE = {
 # list of forbidden wording.
 FORBIDDEN_PHRASE_REGEX = r"\b(final|production|deploy(?:ed|able|ment)?|tradable|live|sharpe|alpha)\b"
 
-# Pre-registration constants table mirror - sourced from notebook07_contract.
+# Pre-registration constants table mirror - sourced from the canonical contract module.
 PRE_REGISTRATION_CONSTANTS = {
     "improvement_threshold_delta_macro_f1_lcb_95": IMPROVEMENT_LCB_MIN,
     "improvement_threshold_positive_ticker_count_min": IMPROVEMENT_TICKER_COUNT_MIN,
@@ -2102,7 +2102,8 @@ def build_notebook() -> nbformat.NotebookNode:
             "or use SHAP / permutation / ECE / AURC / null-control as a selection gate."
         ),
         new_markdown_cell(
-            "## 07 Contract Helpers\n\nInline copy of `scripts/notebook07_contract.py` for Colab "
+            "## 07 Contract Helpers\n\nInline copy of canonical "
+            "`src/intraday_research/contracts/validation_synthesis_gap_audit.py` for Colab "
             "portability. Loaded BEFORE config so the config cell can pin constants by name."
         ),
         new_code_cell(contract_source.strip()),
@@ -2130,7 +2131,8 @@ def build_notebook() -> nbformat.NotebookNode:
             "## 07B - Final Validation-Only Comparison\n\n"
             "Builds one normalized table for full-coverage N05 rows and (optional) selective "
             "N06 fixed-grid rows. Each row carries `row_class` ∈ {full_coverage, selective}; "
-            "REQUIRED + CONDITIONAL columns follow `scripts/notebook07_contract.py`."
+            "REQUIRED + CONDITIONAL columns follow canonical "
+            "`src/intraday_research/contracts/validation_synthesis_gap_audit.py`."
         ),
         new_code_cell(CELL_07B.strip()),
         new_markdown_cell(

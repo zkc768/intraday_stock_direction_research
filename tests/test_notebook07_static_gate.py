@@ -59,6 +59,10 @@ def joined_code_source() -> str:
     return "\n".join(cell.source for cell in nb.cells if cell.cell_type == "code")
 
 
+def joined_notebook_source() -> str:
+    return "\n".join(cell.source for cell in load_notebook().cells)
+
+
 def notebook_code_cells():
     return [cell for cell in load_notebook().cells if cell.cell_type == "code"]
 
@@ -390,6 +394,15 @@ def test_notebook07_inlined_contract_helper_matches_source_module():
         "src/intraday_research/contracts/validation_synthesis_gap_audit.py, "
         "NOT at the legacy scripts/notebook07_contract.py shim)."
     )
+
+
+@notebook_required
+def test_notebook07_contract_text_does_not_describe_legacy_shim_as_source():
+    source = joined_notebook_source()
+    assert "Inline copy of `scripts/notebook07_contract.py`" not in source
+    assert "sourced from notebook07_contract" not in source
+    assert "follow `scripts/notebook07_contract.py`" not in source
+    assert "src/intraday_research/contracts/validation_synthesis_gap_audit.py" in source
 
 
 @notebook_required

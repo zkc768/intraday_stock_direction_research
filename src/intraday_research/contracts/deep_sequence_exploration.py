@@ -77,6 +77,17 @@ ARCHITECTURE_FAMILIES = (
     "last_step_lightgbm_control",
 )
 
+# Families currently allowed inside an 08X search-space payload. GRU/LSTM remain
+# section-7.1 candidate families, but they are withheld from 08X until their
+# axis blocks are frozen in config/search-space and sha-stamped before trial 0.
+SEARCH_ELIGIBLE_ARCHITECTURE_FAMILIES = (
+    "ms_dlinear_tcn",
+    "dlinear_only",
+    "tcn_only",
+    "last_step_mlp_sequence_ablation",
+    "last_step_lightgbm_control",
+)
+
 
 # ---------- §7.6 HPO Methods + §7.9 Low-Compute -----------------------------
 
@@ -703,7 +714,7 @@ def validate_08x_search_space(payload: dict) -> None:
     """§7 + §11 search-space JSON guard.
 
     The payload MUST declare:
-      - `architecture_families`: subset of ARCHITECTURE_FAMILIES
+      - `architecture_families`: subset of SEARCH_ELIGIBLE_ARCHITECTURE_FAMILIES
       - `hpo_method`: single value from HPO_METHODS (§7.6 - same HPO per run)
       - `eligibility_thresholds.min_train_inner_lcb_delta_macro_f1`: numeric
       - `scientific_budget_cap_total_trials`: int <= TOTAL_TRIAL_BUDGET_CAP_ACROSS_ALL_FAMILIES
@@ -742,6 +753,13 @@ def validate_08x_search_space(payload: dict) -> None:
     if bad_families:
         raise AssertionError(
             f"08x_search_space.architecture_families has unknown entries: {sorted(bad_families)}"
+        )
+    ineligible_families = set(families) - set(SEARCH_ELIGIBLE_ARCHITECTURE_FAMILIES)
+    if ineligible_families:
+        raise AssertionError(
+            "08x_search_space.architecture_families contains families that are "
+            "not 08X search-eligible until their axes are frozen in config / "
+            f"search-space: {sorted(ineligible_families)}"
         )
     hpo = payload.get("hpo_method")
     if hpo not in HPO_METHODS:

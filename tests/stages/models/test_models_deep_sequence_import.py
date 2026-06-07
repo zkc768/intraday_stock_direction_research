@@ -5,6 +5,10 @@ importable. Does not exercise any substantive behavior; those tests live in
 the implementation half of N08 task #4.
 """
 
+import subprocess
+import sys
+from pathlib import Path
+
 import pytest
 
 
@@ -14,6 +18,23 @@ def test_models_subpackage_imports():
 
 def test_deep_sequence_subpackage_imports():
     import intraday_research.models.deep_sequence  # noqa: F401
+
+
+def test_lightweight_folds_import_does_not_load_torch():
+    """Importing non-torch helpers must not eagerly import torch model bodies."""
+    code = (
+        "import sys\n"
+        "import intraday_research.models.deep_sequence.folds\n"
+        "raise SystemExit(1 if 'torch' in sys.modules else 0)\n"
+    )
+    result = subprocess.run(
+        [sys.executable, "-c", code],
+        cwd=Path(__file__).resolve().parents[3],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert result.returncode == 0, result.stdout + result.stderr
 
 
 def test_each_classifier_family_importable():
@@ -90,6 +111,15 @@ def test_top_level_reexports_match_design_section_7_1():
     }
     missing = expected_classifier_attrs - set(ds.__all__)
     assert not missing, f"__init__.py missing exports for: {sorted(missing)}"
+
+
+def test_top_level_lazy_reexports_are_resolvable():
+    from intraday_research.models import deep_sequence as ds
+
+    assert ds.DLinearClassifier.__name__ == "DLinearClassifier"
+    assert ds.TCNClassifier.__name__ == "TCNClassifier"
+    assert ds.ShallowGRUClassifier.__name__ == "ShallowGRUClassifier"
+    assert ds.ShallowLSTMClassifier.__name__ == "ShallowLSTMClassifier"
 
 
 @pytest.mark.parametrize(

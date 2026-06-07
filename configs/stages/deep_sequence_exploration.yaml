@@ -221,8 +221,6 @@ search_space:
     - ms_dlinear_tcn
     - dlinear_only
     - tcn_only
-    - shallow_gru
-    - shallow_lstm
     - last_step_mlp_sequence_ablation
     - last_step_lightgbm_control
   dlinear:

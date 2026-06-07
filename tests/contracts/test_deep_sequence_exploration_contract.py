@@ -596,6 +596,21 @@ def test_search_space_rejects_unknown_family():
         c.validate_08x_search_space(payload)
 
 
+@pytest.mark.parametrize("family", ["shallow_gru", "shallow_lstm"])
+def test_search_space_rejects_unfrozen_recurrent_families(family: str):
+    """GRU/LSTM are section-7.1 candidates, but not 08X-search eligible yet.
+
+    They have no frozen axis block in the stage config/search-space surface, so
+    listing either family before the 08X harness mirrors and sha-stamps those
+    axes must fail loud instead of producing a silent no-axis trial.
+    """
+    payload = _valid_search_space()
+    payload["architecture_families"] = [family]
+    payload["per_family_trial_budget"] = {family: 5}
+    with pytest.raises(AssertionError, match="not 08X search-eligible"):
+        c.validate_08x_search_space(payload)
+
+
 def test_search_space_rejects_empty_family_list():
     payload = _valid_search_space()
     payload["architecture_families"] = []

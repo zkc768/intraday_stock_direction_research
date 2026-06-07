@@ -99,8 +99,8 @@ These files do not all exist yet. They are the package-first targets.
 | `tests/test_notebook06_artifact_contract.py` | `tests/contracts/test_selective_no_trade_calibration_contract.py` | Move after package contract import works |
 | `tests/test_notebook07_static_gate.py` | `tests/notebooks/test_validation_synthesis_gap_audit_notebook.py` | Rename after N07 stage entrypoint exists |
 | `tests/test_notebook07_artifact_contract.py` | `tests/contracts/test_validation_synthesis_gap_audit_contract.py` | Move after package contract import works |
-| `tests/test_notebook08_static_gate.py` | `tests/notebooks/test_deep_sequence_exploration_notebook.py` | Rename after N08 stage entrypoint exists |
-| `tests/test_notebook08_artifact_contract.py` | `tests/contracts/test_deep_sequence_exploration_contract.py` | Move after package contract import works |
+| `tests/test_notebook08_static_gate.py` | `tests/notebooks/test_deep_sequence_exploration_static_gate.py` | RENAMED 2026-06-06 (Phase 7); target name aligned to Resume Gate §3 (`docs/NOTEBOOK08_RESUME_GATES.md`) and `scripts/check_n08_resume_gate.{sh,ps1}` |
+| `tests/test_notebook08_artifact_contract.py` | `tests/contracts/test_deep_sequence_exploration_contract.py` | RENAMED 2026-06-06 (Phase 7); import now goes through canonical `intraday_research.contracts.deep_sequence_exploration`, not the `scripts/notebook08_contract.py` shim |
 
 ## Documentation Mapping
 

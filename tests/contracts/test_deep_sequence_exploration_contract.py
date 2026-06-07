@@ -12,9 +12,9 @@ Verifies contracts introduced by the 2026-06-06 top-5 edits:
     paper_safe_score (existing design §13.2) plus the booleans the
     08O gate inspects.
 
-Validators were lifted from this file into ``scripts/notebook08_contract.py``
-so the N08 colab notebook generator can inline the same logic for Colab
-portability (same pattern as N06/N07).
+Validators live in ``src/intraday_research/contracts/deep_sequence_exploration.py``;
+``scripts/notebook08_contract.py`` is a re-export shim retained for legacy
+generator/notebook callers (see ``docs/LEGACY_NAME_MAPPING.md``).
 """
 
 from pathlib import Path
@@ -22,7 +22,7 @@ from pathlib import Path
 import pandas as pd
 import pytest
 
-from scripts import notebook08_contract as c
+from intraday_research.contracts import deep_sequence_exploration as c
 
 
 # Re-export under the names the test bodies originally used, so the existing

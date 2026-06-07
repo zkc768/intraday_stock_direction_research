@@ -19,7 +19,10 @@ import nbformat
 import pytest
 
 
-PROJECT_ROOT = Path(__file__).resolve().parents[1]
+# Relocated 2026-06-06 (Phase 7 test relocation): tests/test_notebook08_static_gate.py
+# -> tests/notebooks/test_deep_sequence_exploration_static_gate.py. parents[2]
+# (file -> notebooks -> tests -> repo root) preserves the project-root anchor.
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
 # Renamed 2026-06-06 (Phase 7 semantic rename); legacy path was
 # `notebooks/08_deep_sequence_exploration_colab.ipynb`.
 NOTEBOOK_PATH = PROJECT_ROOT / "notebooks" / "deep_sequence_exploration_colab.ipynb"

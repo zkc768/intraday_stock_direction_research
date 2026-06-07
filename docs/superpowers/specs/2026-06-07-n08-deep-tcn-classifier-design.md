@@ -96,6 +96,14 @@ off-grid values fail loud in the model body, not only in the future 08X harness.
 This keeps config hashes unambiguous and prevents silent exploratory architecture
 drift. `random_state` is validated at `fit` (as DLinear).
 
+**`num_blocks=4` is unreachable (spec self-review resolution).** §7.3 lists
+`num_blocks ∈ {2,3,4}`, but its frozen `channels` set has no length-4 tuple. With
+`num_blocks == len(channels)` AND `channels` restricted to the frozen set, only
+`{2,3}` are constructible; a `num_blocks=4` config fails the channels-frozen-set
+check. The body does not special-case it, and §7.3 (a frozen design doc) is not
+edited here — the contradiction is resolved by making `num_blocks=4` simply
+non-instantiable rather than by widening the channels whitelist.
+
 ## 5. Training Protocol
 
 Verbatim reuse of DLinear §5 (Adam, CrossEntropy, chronological-tail internal

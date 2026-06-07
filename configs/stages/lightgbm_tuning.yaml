@@ -1,0 +1,13 @@
+# Stage skeleton — frozen / already-designed keys only.
+# Stage name source of truth: configs/pipeline.yaml.
+
+stage: lightgbm_tuning
+scope: validation_only
+holdout_test_contact: false
+
+inputs:
+  raw_data_manifest: data/manifests/lightgbm_tuning_inputs.yaml   # placeholder; file not created in Phase 6
+
+outputs:
+  results_dir: results/lightgbm_tuning/
+  run_manifest: artifacts/run_manifests/lightgbm_tuning/          # gitignored at runtime

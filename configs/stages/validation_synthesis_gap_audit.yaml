@@ -1,0 +1,26 @@
+# Stage skeleton — frozen / already-designed keys only.
+# Stage name source of truth: configs/pipeline.yaml.
+
+stage: validation_synthesis_gap_audit
+scope: validation_only
+holdout_test_contact: false
+
+inputs:
+  # N07 is a downstream artifact-first stage: it does NOT read raw bar data;
+  # it consumes upstream official-validation artifacts produced by N05 / N06
+  # (and any upstream candidate ledger rows). The manifest file is a Phase 6
+  # placeholder and is not created yet.
+  upstream_artifacts_manifest: data/manifests/validation_synthesis_gap_audit_inputs.yaml
+
+outputs:
+  results_dir: results/validation_synthesis_gap_audit/
+  run_manifest: artifacts/run_manifests/validation_synthesis_gap_audit/          # gitignored at runtime
+
+policy:
+  validation_budget_ledger: append_only                                          # AGENTS.md §4.3 append-before-read
+
+constants:
+  # source-of-truth: src/intraday_research/contracts/validation_synthesis_gap_audit.py
+  # (AGENTS.md §4.2.5a thresholds; do not modify outside the contract module)
+  improvement_lcb_min: 0.005
+  improvement_ticker_count_min: 4

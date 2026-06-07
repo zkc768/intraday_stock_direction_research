@@ -1,0 +1,29 @@
+# Stage skeleton — frozen / already-designed keys only.
+# Stage name source of truth: configs/pipeline.yaml.
+
+stage: deep_sequence_exploration
+scope: validation_only
+holdout_test_contact: false
+
+inputs:
+  # N08 is a downstream artifact-first stage: it does NOT read raw bar data;
+  # it consumes upstream official-validation artifacts (N07 + N08X / N08F
+  # candidate ledgers). The manifest file is a Phase 6 placeholder and is
+  # not created yet.
+  upstream_artifacts_manifest: data/manifests/deep_sequence_exploration_inputs.yaml
+
+outputs:
+  results_dir: results/deep_sequence_exploration/
+  run_manifest: artifacts/run_manifests/deep_sequence_exploration/          # gitignored at runtime
+
+policy:
+  validation_budget_ledger: append_only                                     # AGENTS.md §4.3 append-before-read
+
+constants:
+  # Same AGENTS.md §4.2.5a thresholds as N07; in the N08 contract they are
+  # spelled IMPROVEMENT_THRESHOLD_DELTA_MACRO_F1_LCB_95 and
+  # IMPROVEMENT_THRESHOLD_POSITIVE_TICKER_COUNT_MIN, but their values mirror
+  # the N07 source-of-truth in
+  # src/intraday_research/contracts/validation_synthesis_gap_audit.py.
+  improvement_lcb_min: 0.005
+  improvement_ticker_count_min: 4

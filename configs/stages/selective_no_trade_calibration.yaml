@@ -1,0 +1,13 @@
+# Stage skeleton — frozen / already-designed keys only.
+# Stage name source of truth: configs/pipeline.yaml.
+
+stage: selective_no_trade_calibration
+scope: validation_only
+holdout_test_contact: false
+
+inputs:
+  raw_data_manifest: data/manifests/selective_no_trade_calibration_inputs.yaml   # placeholder; file not created in Phase 6
+
+outputs:
+  results_dir: results/selective_no_trade_calibration/
+  run_manifest: artifacts/run_manifests/selective_no_trade_calibration/          # gitignored at runtime

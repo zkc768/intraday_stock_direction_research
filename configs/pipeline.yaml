@@ -1,0 +1,166 @@
+# Ordered stage registry for intraday_stock_direction_research.
+#
+# Reference: docs/CODE_ORGANIZATION.md (target shape),
+# docs/LEGACY_NAME_MAPPING.md (legacy <-> target paths).
+#
+# Standardized holdout-contact key: `holdout_test_contact` (must be false).
+#
+# Field semantics (refined in Phase 6-fix, 2026-06-06):
+# - `stage_module` is a Python import path (intraday_research.stages.<name>),
+#   not a file path. The file is implicitly src/<dotted_path>.py.
+# - `reads_upstream_official_validation_artifacts` is true ONLY for stages
+#   that consume an upstream official-validation artifact in the §4.3 ledger
+#   sense; such stages MUST `writes_validation_budget_ledger: true` and MUST
+#   append a ledger row BEFORE every read.
+# - `produces_official_validation_artifacts` is true for stages that emit a
+#   downstream official-validation artifact (e.g. an official-validation
+#   summary CSV). This does NOT by itself trigger the §4.3 ledger; only
+#   reads do.
+# - `writes_validation_budget_ledger` is true ONLY for N07 / N08; the ledger
+#   itself is append-only across them and any thesis chapter that cites
+#   official-validation metrics.
+
+version: 1
+package: intraday_research
+research_scope: validation_only
+
+stages:
+  - name: config_screening
+    legacy_stage_id: "02"
+    scope: validation_only
+    holdout_test_contact: false
+    depends_on: []
+    notebook: notebooks/config_screening_colab.ipynb
+    legacy_paths:
+      notebook: notebooks/02_config_screening_colab.ipynb
+      generator: scripts/create_config_screening_colab_notebook.py
+      contract: null
+    generator: scripts/notebooks/generate_config_screening_colab.py
+    contract: null
+    stage_module: intraday_research.stages.config_screening
+    config: configs/stages/config_screening.yaml
+    results: results/config_screening/
+    reads_upstream_official_validation_artifacts: false
+    produces_official_validation_artifacts: false
+    writes_validation_budget_ledger: false
+    notes: Stage 0 configuration screening, validation_only.
+
+  - name: model_family_screening
+    legacy_stage_id: "03"
+    scope: validation_only
+    holdout_test_contact: false
+    depends_on: [config_screening]
+    notebook: notebooks/model_family_screening_colab.ipynb
+    legacy_paths:
+      notebook: notebooks/03_model_family_screening_colab.ipynb
+      generator: scripts/create_model_family_screening_colab_notebook.py
+      contract: null
+    generator: scripts/notebooks/generate_model_family_screening_colab.py
+    contract: null
+    stage_module: intraday_research.stages.model_family_screening
+    config: configs/stages/model_family_screening.yaml
+    results: results/model_family_screening/
+    reads_upstream_official_validation_artifacts: false
+    produces_official_validation_artifacts: false
+    writes_validation_budget_ledger: false
+    notes: Model-family validation screening.
+
+  - name: controlled_followup
+    legacy_stage_id: "04"
+    scope: validation_only
+    holdout_test_contact: false
+    depends_on: [model_family_screening]
+    notebook: notebooks/controlled_followup_colab.ipynb
+    legacy_paths:
+      notebook: notebooks/04_controlled_followup_colab.ipynb
+      generator: scripts/create_controlled_followup_colab_notebook.py
+      contract: null
+    generator: scripts/notebooks/generate_controlled_followup_colab.py
+    contract: null
+    stage_module: intraday_research.stages.controlled_followup
+    config: configs/stages/controlled_followup.yaml
+    results: results/controlled_followup/
+    reads_upstream_official_validation_artifacts: false
+    produces_official_validation_artifacts: false
+    writes_validation_budget_ledger: false
+    notes: Controlled validation-only follow-up routing.
+
+  - name: lightgbm_tuning
+    legacy_stage_id: "05"
+    scope: validation_only
+    holdout_test_contact: false
+    depends_on: [controlled_followup]
+    notebook: notebooks/lightgbm_tuning_colab.ipynb
+    legacy_paths:
+      notebook: notebooks/05_lightgbm_tuning_colab.ipynb
+      generator: scripts/create_lightgbm_tuning_colab_notebook.py
+      contract: null
+    generator: scripts/notebooks/generate_lightgbm_tuning_colab.py
+    contract: null
+    stage_module: intraday_research.stages.lightgbm_tuning
+    config: configs/stages/lightgbm_tuning.yaml
+    results: results/lightgbm_tuning/
+    reads_upstream_official_validation_artifacts: false
+    produces_official_validation_artifacts: true
+    writes_validation_budget_ledger: false
+    notes: LightGBM train-inner tuning. PRODUCES the official-validation summary artifact (notebook05_official_validation_summary.csv) consumed by downstream stages. Does NOT itself READ an upstream official-validation artifact in the §4.3-ledger sense, so writes_validation_budget_ledger is false here; N07 / N08 are the readers that trigger the ledger.
+
+  - name: selective_no_trade_calibration
+    legacy_stage_id: "06"
+    scope: validation_only
+    holdout_test_contact: false
+    depends_on: [lightgbm_tuning]
+    notebook: notebooks/selective_no_trade_calibration_colab.ipynb
+    legacy_paths:
+      notebook: notebooks/06_selective_no_trade_calibration_colab.ipynb
+      generator: scripts/create_selective_no_trade_calibration_colab_notebook.py
+      contract: scripts/notebook06_contract.py
+    generator: scripts/notebooks/generate_selective_no_trade_calibration_colab.py
+    contract: src/intraday_research/contracts/selective_no_trade_calibration.py
+    stage_module: intraday_research.stages.selective_no_trade_calibration
+    config: configs/stages/selective_no_trade_calibration.yaml
+    results: results/selective_no_trade_calibration/
+    reads_upstream_official_validation_artifacts: false
+    produces_official_validation_artifacts: false
+    writes_validation_budget_ledger: false
+    notes: Selective / no-trade calibration diagnostics over N05 official-validation predictions; emits calibration artifacts, not a new official-validation summary.
+
+  - name: validation_synthesis_gap_audit
+    legacy_stage_id: "07"
+    scope: validation_only
+    holdout_test_contact: false
+    depends_on: [selective_no_trade_calibration]
+    notebook: notebooks/validation_synthesis_gap_audit_colab.ipynb
+    legacy_paths:
+      notebook: notebooks/07_validation_synthesis_and_gap_audit_colab.ipynb
+      generator: scripts/create_validation_synthesis_and_gap_audit_colab_notebook.py
+      contract: scripts/notebook07_contract.py
+    generator: scripts/notebooks/generate_validation_synthesis_gap_audit_colab.py
+    contract: src/intraday_research/contracts/validation_synthesis_gap_audit.py
+    stage_module: intraday_research.stages.validation_synthesis_gap_audit
+    config: configs/stages/validation_synthesis_gap_audit.yaml
+    results: results/validation_synthesis_gap_audit/
+    reads_upstream_official_validation_artifacts: true
+    produces_official_validation_artifacts: true
+    writes_validation_budget_ledger: true
+    notes: N07 validation synthesis and gap audit. AGENTS.md §4.3 applies, the validation-budget ledger is append-only across N07 and N08; any read of an official-validation metric MUST append a row recording the intent BEFORE the read; pre-existing rows MUST NOT be modified, dropped, or reordered.
+
+  - name: deep_sequence_exploration
+    legacy_stage_id: "08"
+    scope: validation_only
+    holdout_test_contact: false
+    depends_on: [validation_synthesis_gap_audit]
+    notebook: notebooks/deep_sequence_exploration_colab.ipynb
+    legacy_paths:
+      notebook: notebooks/08_deep_sequence_exploration_colab.ipynb
+      generator: scripts/create_deep_sequence_exploration_colab_notebook.py
+      contract: scripts/notebook08_contract.py
+    generator: scripts/notebooks/generate_deep_sequence_exploration_colab.py
+    contract: src/intraday_research/contracts/deep_sequence_exploration.py
+    stage_module: intraday_research.stages.deep_sequence_exploration
+    config: configs/stages/deep_sequence_exploration.yaml
+    results: results/deep_sequence_exploration/
+    reads_upstream_official_validation_artifacts: true
+    produces_official_validation_artifacts: true
+    writes_validation_budget_ledger: true
+    notes: N08 deep sequence exploration / freeze readout. AGENTS.md §4.3 append-before-read ledger rule applies; tests/test_notebook08_artifact_contract.py validate_08o_ledger_append_precedes_read enforces this contract.

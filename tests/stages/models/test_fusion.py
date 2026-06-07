@@ -11,6 +11,7 @@ from intraday_research.models.deep_sequence.dlinear import DLinearClassifier
 from intraday_research.models.deep_sequence.fusion import (
     DLinearLogitsPlusTCNLogitsFusion,
     LateAverageProbabilitiesFusion,
+    SmallFusionMLP,
 )
 from intraday_research.models.deep_sequence.tcn import TCNClassifier
 
@@ -188,3 +189,178 @@ def test_config_forwarding_bad_axis_fails_loud(cls):
     X, y = _make_xy(seed=2)
     with pytest.raises(ValueError, match="moving_avg_kernel"):
         cls(dlinear_config={**_DL_FAST, "moving_avg_kernel": 4}, random_state=0).fit(X, y)
+
+
+# ---- Slice 2: SmallFusionMLP (chronological-OOF stacking) --------------
+
+def _mk_mlp(**overrides):
+    kw = dict(
+        dlinear_config=dict(_DL_FAST),
+        tcn_config=dict(_TC_FAST),
+        random_state=0,
+    )
+    kw.update(overrides)
+    return SmallFusionMLP(**kw)
+
+
+def test_mlp_is_sequence_classifier():
+    assert isinstance(SmallFusionMLP(), SequenceClassifier)
+
+
+def test_mlp_fit_returns_self_and_proba_contract():
+    X, y = _make_xy(n=40, seed=2)
+    clf = _mk_mlp()
+    assert clf.fit(X, y) is clf
+    proba = clf.predict_proba(X)
+    assert proba.shape == (40, 2)
+    assert proba.dtype == np.float64
+    np.testing.assert_allclose(proba.sum(axis=1), 1.0, atol=1e-6)
+    assert (proba >= 0.0).all() and (proba <= 1.0).all()
+
+
+def test_mlp_determinism_same_seed_bit_exact():
+    X, y = _make_xy(n=40, seed=3)
+    p1 = _mk_mlp(random_state=7).fit(X, y).predict_proba(X)
+    p2 = _mk_mlp(random_state=7).fit(X, y).predict_proba(X)
+    np.testing.assert_array_equal(p1, p2)
+
+
+def test_mlp_differs_from_late_average():
+    X, y = _make_xy(n=40, seed=4)
+    mlp = _mk_mlp(random_state=0).fit(X, y).predict_proba(X)
+    avg = _mk(LateAverageProbabilitiesFusion, random_state=0).fit(X, y).predict_proba(X)
+    assert not np.allclose(mlp, avg)
+
+
+@pytest.mark.parametrize("hidden", [8, 16, 32])
+def test_mlp_axis_hidden_size(hidden):
+    X, y = _make_xy(n=40, seed=2)
+    assert _mk_mlp(mlp_hidden_size=hidden).fit(X, y).predict_proba(X).shape == (40, 2)
+
+
+@pytest.mark.parametrize("dropout", [0.0, 0.05, 0.10])
+def test_mlp_axis_dropout(dropout):
+    X, y = _make_xy(n=40, seed=2)
+    assert _mk_mlp(mlp_dropout=dropout).fit(X, y).predict_proba(X).shape == (40, 2)
+
+
+def test_mlp_reject_hidden_off_grid():
+    with pytest.raises(ValueError, match="mlp_hidden_size"):
+        SmallFusionMLP(mlp_hidden_size=64)
+
+
+def test_mlp_reject_hidden_bool_aliasing():
+    with pytest.raises(ValueError, match="mlp_hidden_size"):
+        SmallFusionMLP(mlp_hidden_size=True)
+
+
+def test_mlp_reject_dropout_off_grid():
+    with pytest.raises(ValueError, match="mlp_dropout"):
+        SmallFusionMLP(mlp_dropout=0.5)
+
+
+def test_mlp_reject_dropout_bool_aliasing_zero():
+    with pytest.raises(ValueError, match="mlp_dropout"):
+        SmallFusionMLP(mlp_dropout=False)
+
+
+def test_mlp_reject_oof_tail_single_class():
+    X, _ = _make_xy(n=20, seed=2)
+    y = np.array([0, 1] * 7 + [0] * 6, dtype=np.int8)  # trailing OOF tail all 0
+    with pytest.raises(ValueError, match="tail lacks both classes"):
+        _mk_mlp(random_state=0).fit(X, y)
+
+
+def test_mlp_reject_oof_prefix_single_class():
+    X, _ = _make_xy(n=20, seed=2)
+    y = np.array([0] * 14 + [0, 1, 0, 1, 0, 1], dtype=np.int8)  # prefix all 0
+    with pytest.raises(ValueError, match="prefix lacks both classes"):
+        _mk_mlp(random_state=0).fit(X, y)
+
+
+def test_mlp_reject_too_few_rows():
+    X = np.random.default_rng(0).standard_normal((2, 20, 2)).astype(np.float64)
+    y = np.array([0, 1], dtype=np.int8)
+    with pytest.raises(ValueError, match="too few rows"):
+        _mk_mlp(random_state=0).fit(X, y)
+
+
+def test_mlp_reject_random_state_none_at_fit():
+    X, y = _make_xy(n=40, seed=2)
+    assert SmallFusionMLP().random_state is None
+    with pytest.raises(ValueError, match="random_state"):
+        SmallFusionMLP().fit(X, y)
+
+
+def test_mlp_reject_nested_random_state_in_config():
+    with pytest.raises(ValueError, match="random_state"):
+        SmallFusionMLP(dlinear_config={"random_state": 5})
+
+
+def test_mlp_reject_predict_before_fit():
+    X, _ = _make_xy(n=10, seed=2)
+    with pytest.raises(RuntimeError, match="before fit"):
+        SmallFusionMLP(random_state=0).predict_proba(X)
+
+
+def test_mlp_predict_proba_empty_batch():
+    X, y = _make_xy(n=40, seed=2)
+    clf = _mk_mlp(random_state=0).fit(X, y)
+    empty = np.zeros((0, 20, 2), dtype=np.float64)
+    proba = clf.predict_proba(empty)
+    assert proba.shape == (0, 2)
+    assert proba.dtype == np.float64
+
+
+def test_mlp_reject_predict_shape_drift():
+    X, y = _make_xy(n=40, c=2, seed=2)
+    clf = _mk_mlp(random_state=0).fit(X, y)
+    X_bad, _ = _make_xy(n=5, c=3, seed=2)
+    with pytest.raises(ValueError, match="differs from the fitted"):
+        clf.predict_proba(X_bad)
+
+
+def test_mlp_trains_on_oof_only(monkeypatch):
+    """Lock the OOF contract (Codex slice-2 P3): base models fit ONLY the
+    chronological prefix; the MLP's training features are sub-model logits over
+    ONLY the trailing tail. A refactor that trains components on all rows or
+    feeds in-sample logits to the MLP would break this."""
+    import intraday_research.models.deep_sequence.dlinear as dl_mod
+    import intraday_research.models.deep_sequence.tcn as tcn_mod
+
+    rec = {"dl_fit": [], "dl_logit": [], "tcn_fit": [], "tcn_logit": []}
+
+    class _SpyDL(dl_mod.DLinearClassifier):
+        def fit(self, X, y):
+            rec["dl_fit"].append(X.shape[0])
+            return super().fit(X, y)
+
+        def _predict_logits(self, X):
+            rec["dl_logit"].append(X.shape[0])
+            return super()._predict_logits(X)
+
+    class _SpyTCN(tcn_mod.TCNClassifier):
+        def fit(self, X, y):
+            rec["tcn_fit"].append(X.shape[0])
+            return super().fit(X, y)
+
+        def _predict_logits(self, X):
+            rec["tcn_logit"].append(X.shape[0])
+            return super()._predict_logits(X)
+
+    monkeypatch.setattr(dl_mod, "DLinearClassifier", _SpyDL)
+    monkeypatch.setattr(tcn_mod, "TCNClassifier", _SpyTCN)
+
+    n = 40
+    n_tail = int(round(n * 0.3))  # mirrors _OOF_TAIL_FRACTION
+    split_at = n - n_tail
+    X, y = _make_xy(n=n, seed=2)
+    _mk_mlp(random_state=0).fit(X, y)
+
+    # Base models fit ONLY on the prefix.
+    assert rec["dl_fit"] == [split_at]
+    assert rec["tcn_fit"] == [split_at]
+    # The MLP's OOF features are sub-model logits over ONLY the trailing tail
+    # (the first _predict_logits call during fit).
+    assert rec["dl_logit"][0] == n_tail
+    assert rec["tcn_logit"][0] == n_tail

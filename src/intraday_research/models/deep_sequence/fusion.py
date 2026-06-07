@@ -144,11 +144,44 @@ class DLinearLogitsPlusTCNLogitsFusion(_FusionBase):
         return self._stable_softmax(logits)
 
 
-class SmallFusionMLP(_FusionBase):
-    """Section 7.4 ``small_fusion_mlp`` variant scaffold (slice 2).
+# ---- SmallFusionMLP (slice 2) -----------------------------------------
 
-    A small MLP head over the two models' logits, trained on chronological-OOF
-    logits (design spec section 4.3). Substantive body is fusion slice 2.
+# Spec-introduced "shallow MLP head" axes. 08X-eligibility: the ``ms_dlinear_tcn``
+# family is search-eligible, but these variant sub-axes need a config /
+# search-space mirror before an 08X run varies them (parallels the GRU/LSTM gate).
+_MLP_HIDDEN_SIZES: tuple[int, ...] = (8, 16, 32)
+_MLP_DROPOUTS: tuple[float, ...] = (0.0, 0.05, 0.10)
+# Fixed internal MLP-stacking hyperparameters (NOT search axes).
+_OOF_TAIL_FRACTION = 0.3
+_MLP_LEARNING_RATE = 1e-3
+_MLP_MAX_EPOCHS = 200
+
+
+def _build_fusion_mlp(in_features: int, hidden_size: int, dropout: float):
+    """Small stacking head: ``Linear -> ReLU -> Dropout -> Linear(2)``."""
+    from torch import nn
+
+    return nn.Sequential(
+        nn.Linear(in_features, hidden_size),
+        nn.ReLU(),
+        nn.Dropout(dropout),
+        nn.Linear(hidden_size, 2),
+    )
+
+
+class SmallFusionMLP(_FusionBase):
+    """Section 7.4 ``small_fusion_mlp`` — a small MLP head over the two models'
+    pre-softmax logits, trained on chronological out-of-fold (OOF) logits.
+
+    To avoid an optimistic stacker (Codex design review), the base models are fit
+    on a chronological PREFIX and the MLP trains on their logits over the trailing
+    OOF TAIL (no random split / no shuffle — AGENTS §4.1). Prediction uses the
+    prefix-fit base models + the trained MLP, so the MLP never sees in-sample
+    sub-model logits.
+
+    08X-eligibility: the ``ms_dlinear_tcn`` family is search-eligible, but
+    ``mlp_hidden_size`` / ``mlp_dropout`` are spec-introduced sub-axes that need a
+    config / search-space mirror before an 08X run varies them.
     """
 
     def __init__(
@@ -167,16 +200,132 @@ class SmallFusionMLP(_FusionBase):
         )
         self.mlp_hidden_size = mlp_hidden_size
         self.mlp_dropout = mlp_dropout
+        self._mlp = None
+        self._validate_mlp_axes()
+
+    def _validate_mlp_axes(self) -> None:
+        if type(self.mlp_hidden_size) is not int or (
+            self.mlp_hidden_size not in _MLP_HIDDEN_SIZES
+        ):
+            raise ValueError(
+                f"mlp_hidden_size must be one of {_MLP_HIDDEN_SIZES} (exact int); "
+                f"got {self.mlp_hidden_size!r}"
+            )
+        if type(self.mlp_dropout) is not float or self.mlp_dropout not in _MLP_DROPOUTS:
+            raise ValueError(
+                f"mlp_dropout must be one of {_MLP_DROPOUTS} (exact float); "
+                f"got {self.mlp_dropout!r}"
+            )
 
     def fit(self, X: np.ndarray, y: np.ndarray) -> "SmallFusionMLP":
-        raise NotImplementedError(
-            "SmallFusionMLP.fit is a scaffold; fusion slice 2 (N08 #5D-5)."
+        self._check_random_state()
+        from intraday_research.models.deep_sequence._torch_base import (
+            _SequenceTorchClassifier,
         )
+        from intraday_research.models.deep_sequence.dlinear import DLinearClassifier
+        from intraday_research.models.deep_sequence.tcn import TCNClassifier
+
+        x_arr = _SequenceTorchClassifier._validate_x(X, where="fit")
+        y_arr = np.asarray(y)
+        if y_arr.ndim != 1 or y_arr.shape[0] != x_arr.shape[0]:
+            raise ValueError(
+                "fit: y must be 1-D with the same length as X; got "
+                f"y.shape={y_arr.shape}, X.shape={x_arr.shape}"
+            )
+        if not np.issubdtype(y_arr.dtype, np.integer):
+            raise ValueError(f"fit: y must be integer in {{0, 1}}; got {y_arr.dtype}")
+        if set(int(v) for v in np.unique(y_arr)) != {0, 1}:
+            raise ValueError("fit: y must contain both classes 0 and 1")
+        y_arr = y_arr.astype(np.int64, copy=False)
+
+        # Chronological OOF split: fit base on the prefix, train the MLP on the
+        # trailing OOF tail (AGENTS §4.1 — no random split, no reshuffle).
+        n = x_arr.shape[0]
+        n_tail = int(round(n * _OOF_TAIL_FRACTION))
+        if n_tail < 1 or (n - n_tail) < 2:
+            raise ValueError(
+                f"SmallFusionMLP: too few rows ({n}) for a chronological OOF "
+                "split (need a both-class prefix plus a non-empty tail)"
+            )
+        split_at = n - n_tail
+        if set(int(v) for v in np.unique(y_arr[:split_at])) != {0, 1}:
+            raise ValueError(
+                "SmallFusionMLP: the chronological prefix lacks both classes; OOF "
+                "stacking needs a both-class prefix + tail (AGENTS §4.1 forbids "
+                "reshuffling rows to fix this)"
+            )
+        if set(int(v) for v in np.unique(y_arr[split_at:])) != {0, 1}:
+            raise ValueError(
+                "SmallFusionMLP: the chronological OOF tail lacks both classes; "
+                "OOF stacking needs a both-class prefix + tail"
+            )
+
+        dlinear = DLinearClassifier(
+            random_state=self.random_state, **self.dlinear_config
+        ).fit(x_arr[:split_at], y_arr[:split_at])
+        tcn = TCNClassifier(
+            random_state=self.random_state, **self.tcn_config
+        ).fit(x_arr[:split_at], y_arr[:split_at])
+
+        feat = np.concatenate(
+            [
+                dlinear._predict_logits(x_arr[split_at:]),
+                tcn._predict_logits(x_arr[split_at:]),
+            ],
+            axis=1,
+        ).astype(np.float32)
+        mlp = self._train_mlp(feat, y_arr[split_at:])
+
+        # Atomic assign after all three succeed (Codex P2).
+        self._dlinear = dlinear
+        self._tcn = tcn
+        self._mlp = mlp
+        return self
+
+    def _train_mlp(self, feat: np.ndarray, y: np.ndarray):
+        import torch
+        from torch import nn
+
+        # Same determinism global-state save/restore as the single-model base.
+        prev_det = torch.are_deterministic_algorithms_enabled()
+        prev_warn = torch.is_deterministic_algorithms_warn_only_enabled()
+        prev_rng = torch.random.get_rng_state()
+        torch.use_deterministic_algorithms(True)
+        try:
+            torch.manual_seed(self.random_state)
+            mlp = _build_fusion_mlp(
+                feat.shape[1], self.mlp_hidden_size, self.mlp_dropout
+            )
+            x_t = torch.from_numpy(feat)
+            y_t = torch.from_numpy(y)
+            optimizer = torch.optim.Adam(mlp.parameters(), lr=_MLP_LEARNING_RATE)
+            loss_fn = nn.CrossEntropyLoss()
+            mlp.train()
+            for _ in range(_MLP_MAX_EPOCHS):  # full-batch; no shuffle (AGENTS §4.1)
+                optimizer.zero_grad()
+                loss_fn(mlp(x_t), y_t).backward()
+                optimizer.step()
+            mlp.eval()
+        finally:
+            torch.use_deterministic_algorithms(prev_det, warn_only=prev_warn)
+            torch.random.set_rng_state(prev_rng)
+        return mlp
 
     def predict_proba(self, X: np.ndarray) -> np.ndarray:
-        raise NotImplementedError(
-            "SmallFusionMLP.predict_proba is a scaffold; see fit."
-        )
+        if self._mlp is None or self._dlinear is None or self._tcn is None:
+            raise RuntimeError(
+                f"{type(self).__name__}.predict_proba called before fit; "
+                "call .fit(X, y) first."
+            )
+        import torch
+
+        feat = np.concatenate(
+            [self._dlinear._predict_logits(X), self._tcn._predict_logits(X)], axis=1
+        ).astype(np.float32)
+        self._mlp.eval()  # force eval at predict (defensive; mirrors the base)
+        with torch.no_grad():
+            logits = self._mlp(torch.from_numpy(feat)).numpy().astype(np.float64)
+        return self._stable_softmax(logits)
 
 
 class DLinearTrendPlusTCNResidualFusion(_FusionBase):

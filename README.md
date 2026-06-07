@@ -4,16 +4,16 @@ Research notebook project for high-frequency stock direction classification.
 
 Default entry points:
 
-- `AGENTS.md` — project rules and hard research-validity constraints.
-- `docs/RESEARCH_WORKFLOW.md` — notebook-first experiment workflow.
-- `notebooks/04_ian_research_memo.ipynb` — current active research notebook.
-- `docs/ENVIRONMENT.md` — local Python interpreter and environment notes.
+- `AGENTS.md` - project rules and hard research-validity constraints.
+- `docs/RESEARCH_WORKFLOW.md` - notebook-first experiment workflow.
+- `notebooks/01_research_direction_colab.ipynb` - raw-data-first research direction and Colab opening context.
+- `notebooks/02_config_screening_colab.ipynb` - active Stage 0 configuration-screening notebook.
+- `docs/ENVIRONMENT.md` - local Python interpreter and environment notes.
 
 Useful references:
 
-- `docs/BASELINE_REFERENCE.md` records the current baseline setup.
-- `archive/legacy_model_runner_reference/` contains the old helper library, tests, reference excerpts, scripts, and model-runner-orchestrated notebook. It is historical reference only.
-- Historical `PM_*`, `PHASE_1B_*`, route-control, handoff, and prompt-operation documents were removed from the working tree as tracked history. Recover them from git history if a historical audit is needed.
-- Notebooks `00` through `03` were moved to `notebooks/archive/legacy_setup_smoke_notebooks/`; they are not active templates.
+- `docs/CONFIG_SCREENING_FREEZE_2026-06-04.md` locks the active raw-data-first Stage 0 configuration-screening route.
+- `notebooks/01_research_direction_colab.ipynb` records the Colab opening workflow and raw-data manifest.
+- `notebooks/02_config_screening_colab.ipynb` is the active validation-only Stage 0 notebook.
 
-Current working style: one clear validation-only research notebook at a time, with chronological splits, train-only preprocessing, split-boundary label invalidation, dummy-baseline comparison, and explicit result scope. Active notebook work should not depend on archived helper library or old runner scripts.
+Current working style: one clear validation-only research notebook at a time, with chronological splits, train-only preprocessing, split-boundary label invalidation, dummy-baseline comparison, and explicit result scope. Active notebook work should be raw-data-first and self-contained. The active route is `01_research_direction_colab.ipynb` then `02_config_screening_colab.ipynb`; future model-family screening belongs in a later `03_model_family_screening_colab.ipynb` only after Stage 0 selects candidates.

@@ -1,10 +1,10 @@
 # Research Workflow
 
 > Use this workflow to start a new `intraday_stock_direction_research` research notebook. The goal is
-> a clean, linear analysis that Ian and future you can read without opening a
+> a clean, linear analysis that future you can read without opening a
 > pile of PM documents.
 >
-> Hard rules live in `AGENTS.md` Section 3. This file describes the normal
+> Hard rules live in `AGENTS.md` Section 4. This file describes the normal
 > notebook shape.
 
 ---
@@ -20,10 +20,9 @@ Use short, sortable, snake_case names:
 Examples:
 
 ```text
-04_ian_research_memo.ipynb
-05_lgbm_msdt_validation.ipynb
-06_threshold_sensitivity.ipynb
-07_selective_prediction.ipynb
+01_research_direction_colab.ipynb
+02_config_screening_colab.ipynb
+03_model_family_screening_colab.ipynb
 ```
 
 Rules:
@@ -35,8 +34,9 @@ Rules:
 - Put dates, detailed research questions, and conclusions inside the notebook,
   not in the filename.
 
-Archived notebooks under `notebooks/archive/` are provenance only. Do not use
-them as templates for new research notebooks.
+Do not use prior notebooks as templates for new research notebooks. Active
+notebooks should start from the current raw-data-first freeze and the raw
+ticker files.
 
 ---
 
@@ -229,8 +229,10 @@ Model work is validation-only unless the user explicitly authorizes a
 pre-registered holdout/test run.
 
 - LightGBM can use a last-step feature view.
-- MS-DLinear+TCN can use full windows only after an active adapter/spec task is
-  approved; archived references alone are not an active model path.
+- The active notebook 02 route screens a fixed panel: LogReg, LightGBM, simple
+  GRU, and MS-DLinear+TCN.
+- GRU and MS-DLinear+TCN can use full windows only after active adapters define
+  input shape, loss, optimizer, seed handling, and metric parity.
 - Save probabilities if selective/no-trade analysis is relevant.
 - Do not tune on holdout/test.
 
@@ -265,12 +267,10 @@ Weak/mixed results should be described as weak/mixed.
 
 ## 5. When To Touch Other Project Areas
 
-- **Archived helpers**: old helper library, tests, reference excerpts, and CLI
-  scripts live under `archive/legacy_model_runner_reference/`. They are historical
-  reference only.
 - **New helpers**: rebuild a helper only after a notebook proves the logic is
   reused, safety-critical, and testable.
 - **Tests**: write tests only for rebuilt reusable leakage, label, window, or
   metric helpers; do not test ordinary notebook cells.
-- **Historical docs**: `PM_*`, `PHASE_1B_*`, transfer, manifest, route-control,
-  and goal-mode docs are archive material. Do not scan or update them by default.
+- **Active screening**: `notebooks/02_config_screening_colab.ipynb` is the
+  active next lane. Do not use prior notebooks as a substitute for Stage 0
+  configuration screening.

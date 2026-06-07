@@ -37,9 +37,13 @@ work.
   per-notebook technical-design documents for N05 / N06 / N07 / N08 dated
   2026-06-04 through 2026-06-06; each downstream phase reads the freeze of the
   phase it depends on.
-- **Notebook dependency boundary**: active Colab notebooks must be
-  raw-data-first and self-contained. Do not import project helper packages or
-  prior notebooks as the active path.
+- **Notebook dependency boundary**: canonical research logic lives in the local
+  package (`src/intraday_research/` once created). Generated Colab notebooks are
+  thin execution/reporting interfaces and may import the package only when the
+  install is pinned to an exact git commit and the run manifest records the
+  package commit, config hash, notebook hash, inputs, outputs, and
+  holdout/test-contact flag. Self-contained notebooks are optional archival
+  snapshots, not the default source of truth.
 
 The active route first screens `label_config + window_size + feature_set` from
 raw ticker files, then runs model-family screening in the next notebook only
@@ -107,9 +111,11 @@ comparison table and plots
 honest interpretation
 ```
 
-Notebook code may be inline when that makes the analysis easier to read.
-Reusable helpers should be extracted only after notebook evidence shows the
-logic is reused, safety-critical, and testable.
+Notebook code may be inline for setup, configuration, artifact display, and
+short explanatory calculations. Canonical reusable research logic should live in
+`src/intraday_research/` once the package-first migration begins. Reusable
+helpers should be extracted when notebook evidence shows the logic is reused,
+safety-critical, or testable.
 
 New notebook names must be short, sortable, and snake_case:
 
@@ -262,10 +268,12 @@ cleanup must preserve raw data and the current active notebook route.
 
 ## 7.1 Colab Creation Workflow
 
-For active Colab notebooks, default to a raw-data-first standalone workflow:
+For active Colab notebooks, default to a package-backed, raw-data-first
+workflow:
 
-- Do not import `intraday_research` or prior notebook
-  modules as the active path.
+- Import `intraday_research` only after installing the package from an exact git
+  commit or from an explicitly versioned archive whose commit is recorded in the
+  run manifest. Do not import prior notebooks as the active path.
 - Do not mount MyDrive in the default setup cell. Colab mountpoints may already
   contain files and fail before the research code starts.
 - Use an explicit Google Drive raw-data manifest with file IDs for the five
@@ -285,6 +293,57 @@ For active Colab notebooks, default to a raw-data-first standalone workflow:
   execution counts are `None`, and forbidden active-code strings such as
   `from intraday_research` and `baseline_helpers` are absent unless explicitly
   approved. Drive-mount calls are also forbidden in default Colab setup cells.
+
+## 7.2 Package-First Colab Boundary
+
+The long-term repository target is package-first:
+
+```text
+src/intraday_research/ = canonical research logic
+configs/               = stage parameters and ordered pipeline registry
+notebooks/             = generated thin Colab execution/reporting interfaces
+tests/                 = package, stage, notebook, and artifact contracts
+results/               = reproducible stage outputs
+```
+
+- Every research stage that can be run locally or from Colab must expose a
+  tested `run_stage(config)` entry point from `src/intraday_research/stages/`.
+- Generated Colab notebooks may import `intraday_research`, but only after
+  installing the package from an exact git commit. Installing from a floating
+  branch such as `main` is not an acceptable research path.
+- Every package-backed notebook run must write a run manifest that records:
+  repo URL, git commit, package version if present, stage name, config SHA-256,
+  notebook SHA-256, input artifacts, output artifacts, validation scope, and
+  `holdout_test_contact=false` unless a separately authorized holdout/test
+  protocol says otherwise.
+- Generators remain responsible for notebook structure. A generated notebook
+  should contain configuration, dependency pinning, stage invocation, and
+  result display; it should not hide mutable local paths or unstated imports.
+- Self-contained notebooks are allowed only as optional archival snapshots or
+  review packets. They are not the default canonical logic once the package-first
+  migration begins.
+- Extracted package code must be stable, pure where possible, explicitly tested,
+  and behavior-preserving. Good extraction targets include schema validators,
+  artifact contracts, data manifests, feature/label/split/window helpers,
+  train-only preprocessing helpers, dummy baselines, metric aggregation, ledger
+  checks, and stage orchestration.
+- Do not extract exploratory, result-dependent, one-off plotting, thesis prose,
+  run-copy switch cells, or post-validation wording decisions into shared stage
+  code unless a design note first defines the contract.
+- When package behavior used by a generated notebook changes, update the stage
+  config, generator, generated notebook, static gate, artifact contract, and
+  protocol/design note if the research contract changed. Do not leave package
+  behavior and notebook behavior to drift apart.
+- Static gates for package-backed notebooks must verify the exact-commit install
+  or equivalent commit record, the expected stage entry point, manifest writing,
+  empty committed outputs, and the absence of forbidden holdout/test access.
+- Package code must not weaken the hard research rules: no random time-series
+  splits, no train/validation/holdout leakage, no holdout/test contact, no
+  post-validation threshold/model/wording changes, no validation-budget ledger
+  read before append, and no silent exception swallowing.
+- Package-backed local and Colab pipelines must remain reproducible from
+  documented environment files and tests. Hidden installs, unstated dependencies,
+  and machine-local paths are not acceptable as the active research path.
 
 ---
 

@@ -1,8 +1,20 @@
-data/
+# Raw and derived research data stay outside Git. Keep manifests and tiny samples.
+data/*
+!data/README.md
+!data/raw/
+data/raw/*
+!data/raw/MANIFEST.md
+!data/manifests/
+!data/manifests/**
+!data/sample/
+!data/sample/**
+
+# Model checkpoints and training outputs.
 checkpoints/
 
 __pycache__/
 *.py[cod]
+*.egg-info/
 .ipynb_checkpoints/
 
 .venv/
@@ -14,12 +26,67 @@ __pycache__/
 .DS_Store
 Thumbs.db
 
+# Large model, table, and array artifacts.
 *.h5
+*.hdf5
 *.log
 *.parquet
+*.feather
+*.npy
+*.npz
+*.pkl
+*.joblib
 *.pt
 *.pth
+*.safetensors
+
+# Runtime outputs and experiment tracking.
 mlruns/
 output/
-results/
+results/*
+!results/README.md
+!notebooks/results/
+!notebooks/results/**/
 wandb/
+
+# Runtime/review artifact buckets. Keep curated code-management and ledger snapshots.
+artifacts/runtime_caches/
+artifacts/colab_runs/
+artifacts/drive_backups/
+artifacts/tmp/
+artifacts/run_manifests/
+!artifacts/code_management/
+!artifacts/code_management/**
+!artifacts/ledger_snapshots/
+!artifacts/ledger_snapshots/**
+
+# Colab run copies and local notebook backups are not canonical source.
+notebooks/*_run_all.ipynb
+notebooks/*_full_run.ipynb
+notebooks/*_drive_core_full_run.ipynb
+notebooks/*.bak*
+notebooks/*.bak_*
+**/notebook*_drive_backup_manifest.json
+
+# Small tests fixtures are intentionally tracked even when their extensions
+# match ignored runtime artifact formats.
+!tests/fixtures/
+!tests/fixtures/**
+
+# Phase 11 (release prep) — additional non-canonical / runtime artifacts.
+# Chained N05+N06 validation run-copy notebooks are NOT in the canonical
+# 02-08 pipeline; classified as run_copy_notebook in
+# artifacts/code_management/migration_inventory.csv.
+notebooks/05_06_chained_validation_colab*.ipynb
+# Research memos are not executable stage notebooks.
+notebooks/04_ian_research_memo.ipynb
+# Notebook-side evidence directory holds runtime artifacts (feature selection
+# round outputs, smoke logs). Curate to artifacts/ledger_snapshots/ if a
+# specific file becomes review-grade canonical evidence.
+notebooks/evidence/
+# Desktop stage-0 run artifacts (logs, decision blocks, tables). Curate to
+# artifacts/ledger_snapshots/ if reviewed; otherwise local-only.
+artifacts/stage0_desktop_*/
+# Workspace session context dumps at the project root (CK's claude-workspace
+# CLAUDE.md leaks into the project tree but holds no project-side meaning).
+/CLAUDE.md

@@ -94,3 +94,6 @@ artifacts/stage0_desktop_*/
 # the worker; never part of a feature commit). Keep out of git so it does not
 # pollute the per-piece diff-scope check.
 docs/superpowers/runlog/
+# Humanize skill scratch (ask-codex / RLCR review outputs). Regenerated tool
+# output, never part of a feature commit.
+.humanize/

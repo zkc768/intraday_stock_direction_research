@@ -609,7 +609,7 @@ def test_stratified_dummy_scores_absent_binary_class_explicitly():
 
 
 def test_active_helper_imports_do_not_reference_archived_paths():
-    tree = ast.parse(Path("intraday_research/baseline_v1.py").read_text())
+    tree = ast.parse(Path("src/intraday_research/baseline_v1.py").read_text())
     imported_names = set()
     for node in ast.walk(tree):
         if isinstance(node, ast.Import):

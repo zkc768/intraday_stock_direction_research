@@ -1,0 +1,68 @@
+"""Compatibility shim — canonical code lives in
+``intraday_research.contracts.deep_sequence_exploration``.
+
+See ``docs/LEGACY_NAME_MAPPING.md`` for the legacy <-> target path mapping.
+
+All top-level public and private names are re-exported explicitly so existing
+callers (notebooks, tests, generators) continue to resolve ``c.<name>`` and
+``c._<name>`` without modification.
+"""
+
+from intraday_research.contracts.deep_sequence_exploration import (  # noqa: F401
+    ALLOWED_WORDING_BUCKETS,
+    ARCHITECTURE_FAMILIES,
+    CANDIDATE_ELIGIBILITY_MIN_TRAIN_INNER_LCB_DELTA,
+    CLASS_COLLAPSE_PRED_RATE_MIN,
+    COMPUTE_TIER_VALUES,
+    FAILURE_TYPES,
+    FIT_STATUSES,
+    FORBIDDEN_FALLBACK_PATTERNS_NORMALIZED,
+    FORBIDDEN_FALLBACK_RULE_SUBSTRINGS,
+    FUSION_MIN_LCB_ADVANTAGE_OVER_COMPONENTS,
+    HPO_METHODS,
+    IMPROVEMENT_THRESHOLD_DELTA_MACRO_F1_LCB_95,
+    IMPROVEMENT_THRESHOLD_POSITIVE_TICKER_COUNT_MIN,
+    LOW_COMPUTE_SUBMODES,
+    LOW_COMPUTE_SUBMODE_B_ALLOWED_OUTER_FOLD_SCHEMES,
+    LOW_COMPUTE_SUBMODE_B_MIN_INNER_FOLD_K,
+    LOW_COMPUTE_SUBMODE_B_MIN_OUTER_FOLD_K,
+    LOW_COMPUTE_SUBMODE_B_REQUIRED_FIELDS,
+    NOTEBOOK08_SCOPE,
+    OPERATOR_READOUT_AUTHORIZATION_INPUTS,
+    OUTPUT_FILES_08F,
+    OUTPUT_FILES_08O,
+    OUTPUT_FILES_08X,
+    PAPER_SAFE_SCORE_PENALTY_COMPLEXITY,
+    PAPER_SAFE_SCORE_PENALTY_COMPUTE,
+    PAPER_SAFE_SCORE_WEIGHT_FOLD_CONSISTENCY,
+    PAPER_SAFE_SCORE_WEIGHT_LCB_DELTA,
+    PAPER_SAFE_SCORE_WEIGHT_MEAN_DELTA,
+    PAPER_SAFE_SCORE_WEIGHT_PER_TICKER,
+    PAPER_SAFE_SCORE_WEIGHT_SEED_STABILITY,
+    RECOMMENDED_FREEZE_RECORD_FIELDS,
+    REQUIRED_08O_REAL_READOUT_ARTIFACTS,
+    REQUIRED_08O_RUN_MANIFEST_FIELDS,
+    REQUIRED_08X_RUN_MANIFEST_FIELDS,
+    REQUIRED_DMC_FIELDS,
+    REQUIRED_FREEZE_RECORD_FIELDS,
+    REQUIRED_SEPARATE_SESSION_ATTESTATION_FIELDS,
+    REQUIRED_TRIAL_LEDGER_COLUMNS,
+    SEED_STABILITY_SCALE_FALLBACK,
+    TIER_ESCALATION_MEDIUM_TO_AGGRESSIVE_SEED_STD_MAX,
+    TIER_ESCALATION_QUICK_TO_MEDIUM_LCB_DELTA_MIN,
+    TIER_ESCALATION_QUICK_TO_MEDIUM_POSITIVE_TICKER_MIN,
+    TOTAL_TRIAL_BUDGET_CAP_ACROSS_ALL_FAMILIES,
+    _normalize_fallback_rule,
+    check_08o_real_readout_completeness,
+    operator_readout_authorization_sha,
+    validate_08f_entry,
+    validate_08o_ledger_append_precedes_read,
+    validate_08o_run_manifest,
+    validate_08x_run_manifest,
+    validate_08x_search_space,
+    validate_dmc_attestation,
+    validate_freeze_record,
+    validate_low_compute_submode_b_protocol,
+    validate_separate_session_attestation,
+    validate_trial_ledger_frame,
+)

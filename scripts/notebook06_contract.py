@@ -1,0 +1,66 @@
+"""Compatibility shim — canonical code lives in
+``intraday_research.contracts.selective_no_trade_calibration``.
+
+See ``docs/LEGACY_NAME_MAPPING.md`` for the legacy <-> target path mapping.
+
+All top-level public and private names are re-exported explicitly so existing
+callers (notebooks, tests, generators) continue to resolve ``c.<name>`` and
+``c._<name>`` without modification.
+"""
+
+from intraday_research.contracts.selective_no_trade_calibration import (  # noqa: F401
+    CALIBRATION_BIN_COUNT,
+    CALIBRATION_PRIMARY_BINNING,
+    CALIBRATION_SENSITIVITY_BINNING,
+    COVERAGE_GRID,
+    DECISION_COVERAGE_GRID,
+    FLOAT_TOLERANCE,
+    HARD_REQUIRED_DECISION_FIELDS,
+    INCONCLUSIVE_LOW_POSITIVE_COVERAGE_MAX,
+    INCONCLUSIVE_LOW_POSITIVE_COVERAGE_MIN,
+    INCONCLUSIVE_MIXED_SEED_COVERAGE_COUNT,
+    INCONCLUSIVE_NOISE_COVERAGE_COUNT,
+    INCONCLUSIVE_WARNING_COVERAGE_COUNT,
+    MIN_DECISION_DELTA_MACRO_F1,
+    MIN_INTERPRETABLE_COVERAGE,
+    MIN_POSITIVE_DECISION_COVERAGE_COUNT,
+    MIN_POSITIVE_SEED_COUNT,
+    NOTEBOOK05_REQUIRED_FILES,
+    NOTEBOOK06_SCOPE,
+    NOT_SUPPORTED_FAILURE_COVERAGE_COUNT,
+    PLOT_DPI,
+    PLOT_FIGSIZE,
+    PRIMARY_CONFIDENCE_COLUMN,
+    RANDOM_ABSTENTION_BASE_SEED,
+    RANDOM_ABSTENTION_REPEATS,
+    REQUIRED_NPZ_KEYS,
+    REQUIRED_OFFICIAL_POOLED_FIELDS,
+    T_CRITICAL_ONE_SIDED_95,
+    _calibration_bin_row,
+    _check_no_holdout_or_test_path,
+    _is_false,
+    _is_true,
+    _read_csv,
+    _read_json,
+    _require_columns,
+    _require_false,
+    _require_scope,
+    _resolve_prediction_artifact,
+    _sha256_file,
+    _stable_hash,
+    _validate_train_prior_columns,
+    aggregate_across_seeds,
+    assert_notebook06_artifact_contract,
+    aurc_from_curve,
+    build_canonical_prediction_frame,
+    calibration_bins,
+    concentration_metrics,
+    ece_from_bins,
+    evaluate_decision_outcome,
+    load_notebook06_prediction_artifact,
+    resolve_notebook06_primary_profile,
+    risk_coverage_curve,
+    same_row_stratified_dummy_predict,
+    selective_retained_indices,
+    ticker_stratified_random_abstention,
+)

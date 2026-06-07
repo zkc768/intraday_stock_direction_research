@@ -101,9 +101,12 @@ def apply_chronological_split(
         raise ValueError(
             f"timestamps must be a 1-D ndarray; got shape {shape}"
         )
-    if not np.issubdtype(timestamps.dtype, np.datetime64):
+    # Spec requires datetime64[ns] specifically; a coarser precision such as
+    # datetime64[s]/[D] would silently change comparison granularity, so reject
+    # anything that is not exactly nanosecond datetime64.
+    if timestamps.dtype != np.dtype("datetime64[ns]"):
         raise ValueError(
-            f"timestamps dtype must be datetime64; got {timestamps.dtype}"
+            f"timestamps dtype must be datetime64[ns]; got {timestamps.dtype}"
         )
     # NOTE: do NOT use pd.api.types.is_datetime64tz_dtype(...). It is
     # deprecated and emits a DeprecationWarning; pytest.ini turns

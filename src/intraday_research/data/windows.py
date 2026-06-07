@@ -8,6 +8,7 @@ from __future__ import annotations
 import numpy as np
 
 _BINARY = np.array([0, 1], dtype=np.int8)
+_LABEL_DOMAIN = np.array([0, 1, -1], dtype=np.int8)
 _DATETIME_NS = np.dtype("datetime64[ns]")
 _ZERO_NS = np.timedelta64(0, "ns")
 
@@ -80,6 +81,17 @@ def _validate_core_inputs(
 
     if not np.isin(partition, _BINARY).all():
         raise ValueError("partition values must be in {0, 1}")
+
+    # Label domain: every label must be in {0, 1, -1} (spec 2.2). Without this
+    # an invalid-target row could carry an arbitrary int8 (e.g. 99) and slip
+    # through the target-valid-only pre-pass below.
+    in_domain = np.isin(labels, _LABEL_DOMAIN)
+    if not in_domain.all():
+        first = int(np.flatnonzero(~in_domain)[0])
+        raise ValueError(
+            "labels must be in {0, 1, -1}; "
+            f"row {first} has label {int(labels[first])}"
+        )
 
     # Label-contract pre-pass: a target-valid row must carry a binary label.
     bad = target_valid_mask & ~np.isin(labels, _BINARY)
@@ -232,6 +244,15 @@ def build_windows(
 
     if n == 0:
         return _empty_pooled()
+
+    # Fail-loud on non-self-comparable ids (e.g. float NaN): grouping by
+    # `ticker_ids == ticker` would silently drop such rows (NaN != NaN),
+    # losing data and weakening the no-cross-ticker guarantee.
+    if not (ticker_ids == ticker_ids).all():
+        raise ValueError(
+            "ticker_ids contains entries that do not equal themselves "
+            "(e.g. NaN); every ticker id must be self-comparable"
+        )
 
     try:
         unique_tickers = np.unique(ticker_ids)

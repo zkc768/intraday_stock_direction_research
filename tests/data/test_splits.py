@@ -55,8 +55,11 @@ def _synthetic_timestamps(
 def test_partition_matches_baseline_v1_assign_calendar_split_per_row():
     """Anti-drift gate: every row's int8 partition equals the
     name→code mapping of baseline_v1.assign_calendar_split."""
+    # Span the train->validation boundary so the anti-drift gate actually
+    # exercises the split transition (1h of bars before VALIDATION_START
+    # crossing into validation), not just an all-train block.
     timestamps = _synthetic_timestamps(
-        start="2013-09-15 09:30:00", periods=120,
+        start=str(VALIDATION_START - pd.Timedelta(hours=1)), periods=120,
     )
     partition, _ = apply_chronological_split(
         timestamps,
@@ -64,6 +67,9 @@ def test_partition_matches_baseline_v1_assign_calendar_split_per_row():
         val_end=RAW_BARS_VAL_END,
         horizon_k=3,
     )
+    # The fixture MUST straddle the boundary for this gate to mean anything.
+    assert (partition == int(PARTITION_TRAIN)).any()
+    assert (partition == int(PARTITION_VALIDATION)).any()
     splits_dict = _baseline_v1_splits_dict(
         validation_start=VALIDATION_START,
         val_end=RAW_BARS_VAL_END,
@@ -406,6 +412,19 @@ def test_int_dtype_timestamps_raises():
     with pytest.raises(ValueError, match="must be datetime64"):
         apply_chronological_split(
             timestamps_int,
+            validation_start=VALIDATION_START,
+            val_end=RAW_BARS_VAL_END,
+            horizon_k=3,
+        )
+
+
+def test_non_ns_datetime64_raises():
+    # datetime64[s] is datetime64 but not the required [ns] precision; the
+    # spec pins datetime64[ns], so a coarser precision must be rejected.
+    timestamps_sec = _valid_timestamps_n10().astype("datetime64[s]")
+    with pytest.raises(ValueError, match="datetime64"):
+        apply_chronological_split(
+            timestamps_sec,
             validation_start=VALIDATION_START,
             val_end=RAW_BARS_VAL_END,
             horizon_k=3,

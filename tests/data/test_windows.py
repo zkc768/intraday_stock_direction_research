@@ -279,6 +279,16 @@ def test_rejects_label_contract_violation():
         _call(kw)
 
 
+def test_rejects_label_out_of_domain():
+    # 99 is not in the {0, 1, -1} label domain -> fail loud (an invalid-target
+    # row must not be able to smuggle an arbitrary int8 through).
+    kw = _kw()
+    kw["labels"] = kw["labels"].copy()
+    kw["labels"][0] = np.int8(99)
+    with pytest.raises(ValueError, match="labels must be in"):
+        _call(kw)
+
+
 def test_feature_invalid_in_window_drops_it():
     kw = _kw(n=6)
     kw["feature_valid_mask"] = kw["feature_valid_mask"].copy()
@@ -642,5 +652,16 @@ def test_pooled_rejects_mixed_object_ticker_ids():
 def test_pooled_rejects_ticker_ids_length_mismatch():
     kw = _pooled_two_tickers()
     kw["ticker_ids"] = kw["ticker_ids"][:-1]
+    with pytest.raises(ValueError):
+        _call_pooled(kw)
+
+
+def test_pooled_rejects_nan_ticker_ids():
+    # A float NaN ticker id is not self-comparable; grouping by equality would
+    # silently drop the NaN-tagged rows, so the builder must fail loud instead.
+    kw = _pooled_two_tickers()
+    kw["ticker_ids"] = np.array(
+        [1.0, np.nan, 1.0, 1.0, 1.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+    )
     with pytest.raises(ValueError):
         _call_pooled(kw)

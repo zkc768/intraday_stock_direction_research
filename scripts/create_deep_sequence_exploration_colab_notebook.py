@@ -153,7 +153,7 @@ OPERATOR_ACKNOWLEDGES_FALLBACK_RULE_FROZEN_BEFORE_INSPECTION = False
 # in OUTPUT_DIR (and keep this flag True), OR flip this to False AND drop a
 # valid separate_session_attestation.json in OUTPUT_DIR (positive proof of a
 # separate session by a non-08X-author). An absent flag is NOT proof of a
-# separate session; see ``validate_08f_entry`` in scripts/notebook08_contract.py.
+# separate session; see ``validate_08f_entry`` in the canonical contract module.
 SAME_COLAB_SESSION_AS_08X = True
 SEPARATE_SESSION_ATTESTATION_PATH = OUTPUT_DIR / "separate_session_attestation.json"
 DMC_ATTESTATION_PATH = OUTPUT_DIR / "dmc_attestation.json"
@@ -195,7 +195,7 @@ DEFAULT_SEED_LIST = (260501, 260502, 260503)
 # Default per-family trial budget -- replicated into 08x_search_space.json by
 # RUN_08X_SEARCH_SPACE_DRY_RUN; lower than design §11 "aggressive" caps so the
 # MVP smoke test stays cheap. Real exploration overrides via search-space.
-DEFAULT_PER_FAMILY_BUDGET = {family: 5 for family in ARCHITECTURE_FAMILIES}
+DEFAULT_PER_FAMILY_BUDGET = {family: 5 for family in SEARCH_ELIGIBLE_ARCHITECTURE_FAMILIES}
 
 # Output artifact filenames -- single source of truth so the contract module
 # and the runtime cells agree byte-for-byte (per design §13.1 / §13.2 / §13.3).
@@ -246,7 +246,7 @@ RUN_SWITCHES = {
     "RUN_08O_AGGREGATE_AND_WRITE_MANIFEST": RUN_08O_AGGREGATE_AND_WRITE_MANIFEST,
 }
 
-# Pre-registration constants table mirror -- sourced from notebook08_contract.
+# Pre-registration constants table mirror -- sourced from the canonical contract module.
 PRE_REGISTRATION_CONSTANTS = {
     "improvement_threshold_delta_macro_f1_lcb_95": IMPROVEMENT_THRESHOLD_DELTA_MACRO_F1_LCB_95,
     "improvement_threshold_positive_ticker_count_min": IMPROVEMENT_THRESHOLD_POSITIVE_TICKER_COUNT_MIN,
@@ -422,7 +422,7 @@ def lcb_95(values):
 
 
 def operator_readout_authorization_sha_runtime(fixed_order_inputs):
-    """Inline version of ``notebook08_contract.operator_readout_authorization_sha``
+    """Inline version of canonical contract operator_readout_authorization_sha
     using the symbols available in the notebook namespace. Kept here so the
     notebook can compute the §10.1 SHA without re-importing the contract
     module (the contract module is already inlined as cell 2)."""
@@ -572,8 +572,8 @@ CELL_08X_SEARCH_SPACE_DRY_RUN = r'''
 if RUN_08X_SEARCH_SPACE_DRY_RUN:
     print("[08X] search-space dry run -- writing 08x_search_space.json")
     # Construct a minimal compliant search space (§7 + §11). The contract's
-    # validator enforces: families subset of ARCHITECTURE_FAMILIES, single
-    # hpo_method, numeric eligibility margin, scientific budget cap <= §5.5
+    # validator enforces: families subset of SEARCH_ELIGIBLE_ARCHITECTURE_FAMILIES,
+    # single hpo_method, numeric eligibility margin, scientific budget cap <= §5.5
     # cap, per_family_trial_budget for every declared family. The MVP includes
     # last_step_lightgbm_control + a small deep slice so the failure ledger
     # exercises the not_implemented path.
@@ -1680,10 +1680,10 @@ def build_notebook() -> nbformat.NotebookNode:
             "so empty artifacts cannot be misread as evidence."
         ),
         new_markdown_cell(
-            "## 08 Contract Helpers\n\nInline copy of "
-            "`scripts/notebook08_contract.py` for Colab portability. Loaded "
-            "BEFORE config so the config cell can reference the §5.5 constants "
-            "and `ARCHITECTURE_FAMILIES` by name."
+            "## 08 Contract Helpers\n\nInline copy of canonical "
+            "`src/intraday_research/contracts/deep_sequence_exploration.py` "
+            "for Colab portability. Loaded BEFORE config so the config cell can "
+            "reference the §5.5 constants and architecture-family enums by name."
         ),
         new_code_cell(contract_source.strip()),
         new_markdown_cell(

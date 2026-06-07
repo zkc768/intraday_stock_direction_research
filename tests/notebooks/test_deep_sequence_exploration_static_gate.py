@@ -34,6 +34,13 @@ DESIGN_PATH = (
 GENERATOR_PATH = (
     PROJECT_ROOT / "scripts" / "create_deep_sequence_exploration_colab_notebook.py"
 )
+CONTRACT_PATH = (
+    PROJECT_ROOT
+    / "src"
+    / "intraday_research"
+    / "contracts"
+    / "deep_sequence_exploration.py"
+)
 
 
 # ---------- Helpers ---------------------------------------------------------
@@ -51,6 +58,14 @@ def load_notebook():
 def joined_code_source() -> str:
     nb = load_notebook()
     return "\n".join(cell.source for cell in nb.cells if cell.cell_type == "code")
+
+
+def joined_notebook_source() -> str:
+    return "\n".join(cell.source for cell in load_notebook().cells)
+
+
+def notebook_code_cells():
+    return [cell for cell in load_notebook().cells if cell.cell_type == "code"]
 
 
 notebook_required = pytest.mark.skipif(
@@ -155,6 +170,30 @@ def test_notebook08_code_cells_ast_parse():
     for index, cell in enumerate(load_notebook().cells):
         if cell.cell_type == "code":
             ast.parse(cell.source, filename=f"notebook08_cell_{index}")
+
+
+@notebook_required
+def test_notebook08_inlined_contract_helper_matches_source_module():
+    contract_source = CONTRACT_PATH.read_text(encoding="utf-8").strip()
+    first_code_cell = notebook_code_cells()[0].source.strip()
+    assert first_code_cell == contract_source, (
+        "N08 notebook inlined contract helper is stale. Regenerate "
+        "notebooks/deep_sequence_exploration_colab.ipynb from "
+        "scripts/create_deep_sequence_exploration_colab_notebook.py "
+        "(its CONTRACT_MODULE must point at the canonical "
+        "src/intraday_research/contracts/deep_sequence_exploration.py, "
+        "NOT at the legacy scripts/notebook08_contract.py shim)."
+    )
+
+
+@notebook_required
+def test_notebook08_contract_text_does_not_describe_legacy_shim_as_source():
+    source = joined_notebook_source()
+    assert "Inline copy of `scripts/notebook08_contract.py`" not in source
+    assert "sourced from notebook08_contract" not in source
+    assert "see ``validate_08f_entry`` in scripts/notebook08_contract.py" not in source
+    assert "families subset of ARCHITECTURE_FAMILIES, single" not in source
+    assert "src/intraday_research/contracts/deep_sequence_exploration.py" in source
 
 
 @notebook_required

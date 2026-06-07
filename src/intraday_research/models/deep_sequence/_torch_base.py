@@ -285,6 +285,29 @@ class _SequenceTorchClassifier:
             proba = torch.softmax(logits, dim=1)
         return proba.numpy().astype(np.float64)
 
+    def _predict_logits(self, X: np.ndarray) -> np.ndarray:
+        """Raw pre-softmax head logits ``(n, 2)`` from the fitted module — the
+        companion to ``predict_proba`` used by logit-level fusion. Same fitted +
+        shape-drift checks; ``softmax(_predict_logits(X), axis=1)`` equals
+        ``predict_proba(X)``.
+        """
+        if self._model is None:
+            raise RuntimeError(
+                f"{type(self).__name__}._predict_logits called before fit; "
+                "call .fit(X, y) first."
+            )
+        x_arr = self._validate_x(X, where="_predict_logits")
+        if x_arr.shape[1:] != (self._window_size, self._n_features):
+            raise ValueError(
+                "_predict_logits: X window/feature shape "
+                f"{x_arr.shape[1:]} differs from the fitted "
+                f"{(self._window_size, self._n_features)}"
+            )
+        self._model.eval()
+        with torch.no_grad():
+            logits = self._model(torch.from_numpy(x_arr))
+        return logits.numpy().astype(np.float64)
+
     def _forward_features(self, X: np.ndarray) -> np.ndarray:
         """Raw pre-head features from the fitted module — exposed for causal-leak
         tests. Requires the module to implement ``forward_features``; the base

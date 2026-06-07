@@ -50,8 +50,6 @@ _ALL_FAMILIES = [
 _NOT_YET_IMPLEMENTED_FAMILIES = [
     LastStepMLPSequenceAblation,
     DLinearTrendPlusTCNResidualFusion,
-    DLinearLogitsPlusTCNLogitsFusion,
-    LateAverageProbabilitiesFusion,
     SmallFusionMLP,
 ]
 

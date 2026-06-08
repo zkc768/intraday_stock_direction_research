@@ -10,8 +10,15 @@ from typing import Any
 
 import pandas as pd
 
+from intraday_research.artifact_preflight import (
+    ArtifactSpec,
+    assert_artifact_bundle_complete,
+    csv_artifact,
+    json_artifact,
+)
 from intraday_research.contracts.deep_sequence_exploration import (
     OUTPUT_FILES_08X,
+    REQUIRED_08X_RUN_MANIFEST_FIELDS,
     REQUIRED_TRIAL_LEDGER_COLUMNS,
     validate_08x_run_manifest,
     validate_08x_search_space,
@@ -74,6 +81,42 @@ ENV_MANIFEST_KEYS: tuple[str, ...] = (
     "git_commit",
     "git_dirty",
 )
+SEARCH_SPACE_KEYS: tuple[str, ...] = (
+    "search_space_version",
+    "stage",
+    "scope",
+    "architecture_families",
+    "hpo_method",
+    "eligibility_thresholds",
+    "scientific_budget_cap_total_trials",
+    "per_family_trial_budget",
+    "low_compute_mode",
+    "low_compute_submode",
+    "seed_list",
+    "deferred_07g_gaps",
+    "official_validation_used",
+    "holdout_test_authorized",
+)
+SCHEMA_SMOKE_ARTIFACT_SPECS: tuple[ArtifactSpec, ...] = (
+    json_artifact("08x_search_space.json", SEARCH_SPACE_KEYS),
+    csv_artifact(
+        "08x_trial_ledger.csv",
+        sorted(REQUIRED_TRIAL_LEDGER_COLUMNS),
+        require_non_empty=False,
+    ),
+    csv_artifact("08x_fold_results.csv", FOLD_RESULTS_COLUMNS, require_non_empty=False),
+    csv_artifact("08x_seed_summary.csv", SEED_SUMMARY_COLUMNS, require_non_empty=False),
+    csv_artifact(
+        "08x_failure_ledger.csv", FAILURE_LEDGER_COLUMNS, require_non_empty=False
+    ),
+    csv_artifact(
+        "08x_candidate_compression_table.csv",
+        CANDIDATE_COMPRESSION_COLUMNS,
+        require_non_empty=False,
+    ),
+    json_artifact("08x_run_manifest.json", sorted(REQUIRED_08X_RUN_MANIFEST_FIELDS)),
+    json_artifact("08x_environment_manifest.json", ENV_MANIFEST_KEYS),
+)
 
 
 def resolve_output_dir(config: Mapping[str, Any], output_dir: Path | None) -> Path:
@@ -97,6 +140,7 @@ def write_schema_smoke_artifacts(out: Path) -> None:
     _write_candidate_compression_header(out)
     _write_run_manifest(out)
     _write_environment_manifest(out)
+    assert_artifact_bundle_complete(out, SCHEMA_SMOKE_ARTIFACT_SPECS)
 
 
 def _write_search_space(out: Path) -> None:

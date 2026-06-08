@@ -3,6 +3,7 @@ import json
 import pandas as pd
 import pytest
 
+from intraday_research.artifact_preflight import check_artifact_bundle
 from intraday_research.contracts.deep_sequence_exploration import (
     OUTPUT_FILES_08X,
     REQUIRED_TRIAL_LEDGER_COLUMNS,
@@ -74,6 +75,14 @@ def test_write_schema_smoke_artifacts_emits_valid_bundle(tmp_path, monkeypatch):
     assert env["dependency_versions"] == {"pandas": "x"}
     assert env["git_commit"] == "git-sha"
     assert env["git_dirty"] is False
+
+    verdict = check_artifact_bundle(tmp_path, sm.SCHEMA_SMOKE_ARTIFACT_SPECS)
+    assert verdict["bundle_complete"] is True
+    assert verdict["missing_artifacts"] == []
+    assert verdict["empty_artifacts"] == []
+    assert verdict["schema_drift"] == []
+    assert set(verdict["per_artifact"]) == set(OUTPUT_FILES_08X)
+    assert verdict["per_artifact"]["08x_trial_ledger.csv"]["non_empty"] is False
 
 
 def test_write_schema_smoke_artifacts_keeps_unvalidated_csv_headers(tmp_path, monkeypatch):

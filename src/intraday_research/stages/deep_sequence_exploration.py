@@ -71,6 +71,7 @@ REQUIRED_ARTIFACTS: tuple[str, ...] = (
 SCHEMA_SMOKE_SWITCH = "RUN_08X_SCHEMA_SMOKE"
 OFFICIAL_READOUT_SWITCH = "RUN_08O_OFFICIAL_VALIDATION_READOUT"
 BUILD_FOLDS_SWITCH = "RUN_08X_BUILD_TRAIN_INNER_FOLDS"
+QUICK_SEARCH_SWITCH = "RUN_08X_QUICK_SEARCH"
 # Explicit enumeration of the 13 non-smoke switches declared in
 # `configs/stages/deep_sequence_exploration.yaml`. Used by the parametrized
 # regression test to confirm each is rejected by name. The impl rejects ANY
@@ -78,7 +79,6 @@ BUILD_FOLDS_SWITCH = "RUN_08X_BUILD_TRAIN_INNER_FOLDS"
 # (Codex impl review P1-1: forward-compat against future YAML additions).
 OTHER_SWITCHES: tuple[str, ...] = (
     "RUN_08X_SEARCH_SPACE_DRY_RUN",
-    "RUN_08X_QUICK_SEARCH",
     "RUN_08X_MEDIUM_SEARCH",
     "RUN_08X_AGGRESSIVE_SEARCH",
     "RUN_08X_AGGREGATE_FAILURE_MAP",
@@ -120,6 +120,7 @@ def run_stage(
         SCHEMA_SMOKE_SWITCH,
         OFFICIAL_READOUT_SWITCH,
         BUILD_FOLDS_SWITCH,
+        QUICK_SEARCH_SWITCH,
     }
     enabled_others = sorted(
         name for name, value in switches.items()
@@ -157,6 +158,16 @@ def run_stage(
             "stage %s: build-train-inner-folds writing to %s", STAGE_NAME, out
         )
         run_build_train_inner_folds(config, out)
+        return
+    if active == QUICK_SEARCH_SWITCH:
+        # Lazy import: only the quick-search path needs the torch model registry,
+        # so the schema-smoke / build-folds / official-readout paths stay torch-free.
+        from intraday_research.stages.deep_sequence_quick_search import (
+            run_quick_search,
+        )
+
+        logger.info("stage %s: quick-search writing to %s", STAGE_NAME, out)
+        run_quick_search(config, out)
         return
 
     logger.info("stage %s: schema-smoke writing artifacts to %s", STAGE_NAME, out)

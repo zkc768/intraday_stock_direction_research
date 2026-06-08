@@ -148,3 +148,46 @@ def test_run_single_trial_bool_max_epochs_not_aliased():
     row = _trial(X, y, tk, model_config={"max_epochs": True, "batch_size": 8})
     assert row["fit_status"] == "failed"  # DLinear rejects bool max_epochs
     assert math.isnan(row["max_epochs"])
+
+
+def test_run_single_trial_non_epoch_model_records_completed(monkeypatch):
+    # #5F-6 Q1: a model without max_epochs / actual_epochs_ / early_stop_reason_
+    # (e.g. the LightGBM control) must record an HONEST completed row with NaN
+    # epoch fields, not an AttributeError mis-mapped to training_divergence.
+    from intraday_research.stages import deep_sequence_trial as trial_mod
+
+    class _NoEpochModel:
+        def fit(self, X, y):
+            return self
+
+        def predict_proba(self, X):
+            n = X.shape[0]
+            proba = np.zeros((n, 2))
+            proba[: n // 2, 0] = 1.0
+            proba[n // 2 :, 1] = 1.0
+            return proba
+
+    monkeypatch.setattr(trial_mod, "build_classifier", lambda *a, **k: _NoEpochModel())
+    X, y, tk = _synth()
+    row = _trial(X, y, tk)
+    assert row["fit_status"] == "completed"
+    assert row["failure_type"] == ""
+    assert math.isnan(row["max_epochs"])
+    assert math.isnan(row["actual_epochs"])
+    assert row["early_stop_reason"] == ""
+    validate_trial_ledger_frame(pd.DataFrame([row]))
+
+
+def test_registry_all_search_eligible_families_build():
+    # #5F-6: the registry now covers every SEARCH_ELIGIBLE family.
+    from intraday_research.contracts.deep_sequence_exploration import (
+        SEARCH_ELIGIBLE_ARCHITECTURE_FAMILIES,
+    )
+    from intraday_research.models.deep_sequence.registry import (
+        SEQUENCE_CLASSIFIER_REGISTRY,
+    )
+
+    assert set(SEQUENCE_CLASSIFIER_REGISTRY) == set(SEARCH_ELIGIBLE_ARCHITECTURE_FAMILIES)
+    for family in SEQUENCE_CLASSIFIER_REGISTRY:
+        model = build_classifier(family, random_state=0)
+        assert hasattr(model, "fit") and hasattr(model, "predict_proba")

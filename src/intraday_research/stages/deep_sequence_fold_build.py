@@ -19,6 +19,7 @@ rows are a later (fit) slice concern.
 
 from __future__ import annotations
 
+import hashlib
 import json
 import math
 from collections.abc import Mapping, Sequence
@@ -218,13 +219,13 @@ def build_fold_results(
     return df
 
 
-def resolve_train_inner_index(
+def _resolve_window_index(
     config: Mapping[str, Any],
     injected_window_index: Mapping[str, np.ndarray] | None = None,
-) -> tuple[np.ndarray, np.ndarray]:
-    """Return ``(timestamps, ticker_ids)`` for the OFFICIAL-TRAIN partition only.
+) -> Mapping[str, np.ndarray]:
+    """Resolve the windowed-index mapping by source precedence (#5F-4).
 
-    Windowed-index source precedence (#5F-4):
+    Precedence:
       1. ``injected_window_index`` arg (tests / runner);
       2. ``config['windowed_index']`` (tests / runner);
       3. real data: ``config['data']['txt_manifest']`` ({ticker: local .txt path})
@@ -245,7 +246,17 @@ def resolve_train_inner_index(
         )
     if not isinstance(window_index, Mapping):
         raise ValueError("windowed_index must be a mapping of numpy arrays")
+    return window_index
 
+
+def _train_partition_mask(
+    window_index: Mapping[str, np.ndarray],
+) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """Return ``(train_mask, timestamps, ticker_ids)`` with the partition guard.
+
+    Shared by ``resolve_train_inner_index`` (#5F-4) and ``resolve_train_inner_arrays``
+    (#5F-6) so the OFFICIAL-TRAIN filter + partition-domain guard live in one place.
+    """
     partition = np.asarray(window_index["target_partition"])
     timestamps = np.asarray(window_index["target_timestamps"])
     ticker_ids = np.asarray(window_index["target_ticker_ids"])
@@ -275,7 +286,87 @@ def resolve_train_inner_index(
             "windowed_index has no PARTITION_TRAIN rows; 08X requires "
             "train-inner rows to fold"
         )
+    return train_mask, timestamps, ticker_ids
+
+
+def resolve_train_inner_index(
+    config: Mapping[str, Any],
+    injected_window_index: Mapping[str, np.ndarray] | None = None,
+) -> tuple[np.ndarray, np.ndarray]:
+    """Return ``(timestamps, ticker_ids)`` for the OFFICIAL-TRAIN partition only."""
+    window_index = _resolve_window_index(config, injected_window_index)
+    train_mask, timestamps, ticker_ids = _train_partition_mask(window_index)
     return timestamps[train_mask], ticker_ids[train_mask]
+
+
+def resolve_train_inner_arrays(
+    config: Mapping[str, Any],
+    injected_window_index: Mapping[str, np.ndarray] | None = None,
+) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+    """Return ``(X, y, ticker_ids, timestamps)`` masked to OFFICIAL-TRAIN (#5F-6).
+
+    Same source precedence + partition-domain guard as ``resolve_train_inner_index``;
+    additionally returns the windowed ``X`` / ``y`` so the quick-search loop can fit
+    on ``X[train_idx]`` where ``train_idx`` is positional into these masked arrays
+    (the fold builders index the masked train frame).
+    """
+    window_index = _resolve_window_index(config, injected_window_index)
+    train_mask, timestamps, ticker_ids = _train_partition_mask(window_index)
+    X = np.asarray(window_index["X"])
+    y = np.asarray(window_index["y"])
+    if not (len(X) == len(y) == len(timestamps)):
+        raise ValueError(
+            "windowed_index X/y must align with the index arrays; got "
+            f"X={len(X)}, y={len(y)}, timestamps={len(timestamps)}"
+        )
+    return X[train_mask], y[train_mask], ticker_ids[train_mask], timestamps[train_mask]
+
+
+def fold_assignment_sha256(
+    folds: Sequence[tuple[str, np.ndarray, np.ndarray]],
+) -> str:
+    """Deterministic sha256 over the ordered ``(fold_id, train_idx, val_idx)``.
+
+    Hashes the fold MEMBERSHIP, not just sizes, so a train/val reshuffle with
+    identical counts is detected (Codex #5F-6 P1-1). Indices are serialized as
+    little-endian int64 for cross-platform stability.
+
+    NOTE: this binds only the POSITIONAL fold layout, not the identity of the rows
+    those positions point at; pair it with ``train_inner_index_sha256`` (below) so a
+    data change under an unchanged positional layout is also detected.
+    """
+    digest = hashlib.sha256()
+    for fold_id, train_idx, val_idx in folds:
+        digest.update(str(fold_id).encode("utf-8"))
+        digest.update(b"|train|")
+        digest.update(np.asarray(train_idx, dtype="<i8").tobytes())
+        digest.update(b"|val|")
+        digest.update(np.asarray(val_idx, dtype="<i8").tobytes())
+        digest.update(b"|")
+    return digest.hexdigest()
+
+
+def train_inner_index_sha256(
+    timestamps: np.ndarray, ticker_ids: np.ndarray, y: np.ndarray
+) -> str:
+    """Deterministic sha256 over the ordered masked train-inner ROW identity.
+
+    Binds the fold evidence to the actual ``(timestamp, ticker_id, label)`` rows the
+    folds index into (Codex #5F-6 impl-review P1): a positional fold layout can stay
+    identical while the underlying data changes, so the run manifest records this row
+    -identity hash alongside ``fold_assignment_sha256``. Timestamps are normalized to
+    little-endian int64 ns, labels to little-endian int64, ticker ids to a
+    unit-separator-joined utf-8 string.
+    """
+    timestamps_ns = np.asarray(timestamps).astype("datetime64[ns]").astype("<i8")
+    ticker_text = "\x1f".join(str(t) for t in np.asarray(ticker_ids))
+    digest = hashlib.sha256()
+    digest.update(timestamps_ns.tobytes())
+    digest.update(b"|tk|")
+    digest.update(ticker_text.encode("utf-8"))
+    digest.update(b"|y|")
+    digest.update(np.asarray(y, dtype="<i8").tobytes())
+    return digest.hexdigest()
 
 
 def write_fold_results(out: Path, df: pd.DataFrame) -> None:

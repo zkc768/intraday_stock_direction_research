@@ -166,7 +166,14 @@ def run_single_trial(
     start = time.perf_counter()
     try:
         model = build_classifier(candidate_family, random_state=int(seed), **config)
-        row["max_epochs"] = int(model.max_epochs)
+        # Codex #5F-6 Q1: non-epoch models (LastStepLightGBMControl, the late-fusion
+        # wrappers) carry no `max_epochs`; getattr-guard so they record an honest
+        # completed row instead of raising AttributeError here, which the
+        # except-branch would mis-map to a spurious `training_divergence` failure.
+        model_max_epochs = getattr(model, "max_epochs", None)
+        row["max_epochs"] = (
+            int(model_max_epochs) if type(model_max_epochs) is int else _NAN
+        )
         model.fit(X[train_idx], y[train_idx])
         proba = np.asarray(model.predict_proba(X[val_idx]))
         # Codex impl review P1: a diverged model can emit NaN probabilities;
@@ -184,10 +191,13 @@ def run_single_trial(
             row[col] = float(metrics[col])
         row["fit_status"] = "completed"
         row["failure_type"] = ""
+        # Codex #5F-6 Q1: actual_epochs_ / early_stop_reason_ are torch-base attrs;
+        # non-epoch models lack them, so getattr-guard rather than attribute-access.
+        actual_epochs = getattr(model, "actual_epochs_", None)
         row["actual_epochs"] = (
-            int(model.actual_epochs_) if model.actual_epochs_ is not None else _NAN
+            int(actual_epochs) if type(actual_epochs) is int else _NAN
         )
-        row["early_stop_reason"] = model.early_stop_reason_ or ""
+        row["early_stop_reason"] = getattr(model, "early_stop_reason_", None) or ""
     except Exception as exc:  # noqa: BLE001 -- recorded as a failed trial row
         row["fit_status"] = "failed"
         row["failure_type"] = _classify_failure(exc)

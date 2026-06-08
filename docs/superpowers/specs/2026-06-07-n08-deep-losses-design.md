@@ -31,10 +31,12 @@ just consume the passed-in values.
 
 ## 2. Formulas (numpy, numerically stable)
 
-Shared helper `_log_softmax(logits)`: `logits - logsumexp(logits, axis=1)` with
-the max-subtraction trick (`m = logits.max(axis=1, keepdims=True)`;
-`logsumexp = m + log(sum(exp(logits - m)))`). `log_p_t = log_softmax(logits)[i,
-targets[i]]` is finite for finite logits (no `log(0)`).
+Shared helper `_log_softmax(logits)`: center each row first
+(`z = logits - max(logits)`) and return `z - log(sum(exp(z)))`. Do **not**
+compute `logits - (max + log(sum(exp(z))))`: at huge common offsets such as
+`[1e20, 1e20]`, the `log(sum(exp(z)))` term can be rounded away and produce
+`CE=0` instead of `log(2)`. `log_p_t = log_softmax(logits)[i, targets[i]]` is
+finite for finite logits (no `log(0)`).
 
 | loss | formula (per-sample, then reduce) |
 |---|---|
@@ -42,7 +44,7 @@ targets[i]]` is finite for finite logits (no `log(0)`).
 | `weighted_cross_entropy_train_prior_loss` | inverse-prior class weight `w[c] = 1 / prior[c]`, then the weighted CE above. (Weighted mean is scale-invariant, so no extra normalization.) |
 | `focal_loss` | `p_t = exp(log_p_t)`; `fl_i = α_t · (1 - p_t)^gamma · (-log_p_t)`; `α_t = alpha if y_i==1 else (1-alpha)` when `alpha` given, else `1`; reduce `mean(fl_i)`. |
 | `class_balanced_loss_effective_number` | effective number `E_c = (1 - beta^{n_c}) / (1 - beta)`; class weight `w[c] = 1 / E_c`; then the weighted CE above. (Scale-invariant → Cui's sum-to-num_classes normalization is value-irrelevant; skipped.) **Compute `E_c` stably (Codex P2):** `E_c = -expm1(n_c · log1p(beta - 1)) / (1 - beta)` to avoid cancellation as `beta → 1` (default `0.9999`). |
-| `balanced_softmax_loss` | adjust logits by the log-prior: `CE(logits + log(prior), targets)` (unweighted). |
+| `balanced_softmax_loss` | adjust logits by the log-prior: `CE(centered_logits + log(prior), targets)` (unweighted). Center before adding the prior so a huge common logit offset cannot round the prior away. |
 
 **Reduce-to-CE sanity (drives the tests):** `focal_loss(gamma=0, alpha=None) ==
 cross_entropy_loss`; `balanced_softmax_loss(uniform prior) == cross_entropy_loss`
@@ -58,13 +60,14 @@ Shared `_validate_logits_targets(logits, targets)`:
 - `targets`: 1-D **integer (non-bool)** ndarray, `len == n`, values ⊆ `{0, 1}`;
   else `ValueError`. (bool dtype rejected — Codex note.)
 
-Per-param (exact-type incl. bool rejection — Codex note):
+Per-param (Python/numpy scalar compatibility, bool rejection):
 - `weight` (if not None): float ndarray shape `(2,)`, finite, all `> 0`.
-- `train_class_prior`: 2-tuple of exact floats, each in `(0, 1)`, summing to 1
-  within a tolerance; else `ValueError` (guards `1/0`).
-- `gamma`: exact float `>= 0`. `alpha` (if not None): exact float in `[0, 1]`.
-- `samples_per_class`: 2-tuple of exact ints (reject bool), each `>= 1`.
-  `beta`: exact float in `(0, 1)`.
+- `train_class_prior`: 2-tuple of Python or numpy float scalars, each finite and
+  in `(0, 1)`, summing to 1 within a tolerance; else `ValueError` (guards `1/0`).
+- `gamma`: Python or numpy finite float scalar `>= 0`. `alpha` (if not None):
+  Python or numpy finite float scalar in `[0, 1]`.
+- `samples_per_class`: 2-tuple of Python or numpy integer scalars (reject bool),
+  each `>= 1`. `beta`: Python or numpy finite float scalar in `(0, 1)`.
 
 ## 4. Files
 - **Modify** `src/intraday_research/models/deep_sequence/losses.py` (fill the 5).
@@ -84,7 +87,12 @@ Per-param (exact-type incl. bool rejection — Codex note):
   the weighting raises the loss vs uniform (Codex P2: single-class batches cancel
   the weights), and/or assert the derived class weights directly.
 - **Stability**: large-magnitude logits (e.g. ±50) do not overflow/NaN; CB with
-  `beta=0.9999` and large `samples_per_class` stays finite (the `expm1/log1p` path).
+  `beta=0.9999` and large `samples_per_class` stays finite (the `expm1/log1p`
+  path); equal huge logits still produce CE `log(2)` and balanced-softmax still
+  preserves the prior.
+- **Numpy-scalar caller compatibility**: priors/counts produced by common numpy
+  expressions such as `tuple(np.bincount(y) / n)` and `tuple(np.bincount(y))`
+  are accepted while bools remain rejected.
 - **Guards**: empty `(0,2)` logits (Codex P1), non-(n,2) logits, non-finite
   logits, bool/`{0,1}`-violating targets, prior not summing to 1 / containing 0,
   negative gamma, beta out of (0,1), samples_per_class non-positive or bool,
@@ -116,7 +124,19 @@ models' `_train` — NOT part of this piece.
 - **P2 (direction test):** §5 uses a mixed-class batch (single-class batches cancel
   the weights).
 - **Codex notes absorbed:** targets must be integer-but-not-bool; scalar params
-  exact-type incl. bool rejection.
+  reject bool.
 - **Confirmed sound:** diagnostic role, every formula, the reduce-to-CE
   equivalences, focal `0**0==1.0` safety, the AGENTS §4.1 caller-provides-priors
   boundary.
+
+## 9. Implementation Review — absorbed (2026-06-07)
+- **P1 numerical stability:** implementation returns centered log-softmax values,
+  fixing equal-huge logits (`[1e20, 1e20]`) so CE remains `log(2)`.
+- **P1 balanced-softmax prior preservation:** implementation centers logits
+  before adding `log(prior)` so huge common offsets cannot erase the prior.
+- **P2 weighted-mean stability:** class/sample weights are max-normalized before
+  reduction, preserving the weighted-mean value while avoiding overflow/underflow.
+- **P2 numpy-facing integration:** `train_class_prior`, `samples_per_class`, and
+  float hyperparameters accept Python or numpy scalar values, while bool remains
+  fail-loud. This matches the likely 08X caller path where counts and priors come
+  from `np.bincount`.

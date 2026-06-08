@@ -151,6 +151,50 @@ def test_class_balanced_stable_near_beta_one():
     assert np.isfinite(val)
 
 
+# ---- 4b. Numpy-scalar caller compatibility ----------------------------
+
+def test_accept_numpy_scalar_prior_from_bincount():
+    counts = np.bincount(np.array([0, 1, 1], dtype=np.int64), minlength=2)
+    prior = tuple(counts / counts.sum())
+    assert all(isinstance(p, np.floating) for p in prior)
+
+    assert np.isfinite(
+        weighted_cross_entropy_train_prior_loss(_LOGITS, _TARGETS, train_class_prior=prior)
+    )
+    assert np.isfinite(
+        balanced_softmax_loss(_LOGITS, _TARGETS, train_class_prior=prior)
+    )
+
+
+def test_accept_numpy_integer_samples_from_bincount():
+    counts = np.bincount(np.array([0, 1, 1], dtype=np.int64), minlength=2)
+    samples = tuple(counts)
+    assert all(isinstance(n_c, np.integer) for n_c in samples)
+
+    assert np.isfinite(
+        class_balanced_loss_effective_number(_LOGITS, _TARGETS, samples_per_class=samples)
+    )
+
+
+def test_accept_numpy_float_hyperparameters():
+    assert np.isfinite(
+        focal_loss(
+            _LOGITS,
+            _TARGETS,
+            gamma=np.float64(2.0),
+            alpha=np.float64(0.25),
+        )
+    )
+    assert np.isfinite(
+        class_balanced_loss_effective_number(
+            _LOGITS,
+            _TARGETS,
+            samples_per_class=(10, 10),
+            beta=np.float64(0.9999),
+        )
+    )
+
+
 # ---- 5. Guards ---------------------------------------------------------
 
 def test_reject_empty_batch():
@@ -195,6 +239,11 @@ def test_reject_negative_gamma():
         focal_loss(_LOGITS, _TARGETS, gamma=-1.0)
 
 
+def test_reject_nonfinite_gamma():
+    with pytest.raises(ValueError, match="gamma"):
+        focal_loss(_LOGITS, _TARGETS, gamma=float("inf"))
+
+
 def test_reject_bool_gamma():
     with pytest.raises(ValueError, match="gamma"):
         focal_loss(_LOGITS, _TARGETS, gamma=True)
@@ -205,9 +254,19 @@ def test_reject_alpha_out_of_range():
         focal_loss(_LOGITS, _TARGETS, gamma=2.0, alpha=1.5)
 
 
+def test_reject_bool_alpha():
+    with pytest.raises(ValueError, match="alpha"):
+        focal_loss(_LOGITS, _TARGETS, gamma=2.0, alpha=True)
+
+
 def test_reject_beta_out_of_range():
     with pytest.raises(ValueError, match="beta"):
         class_balanced_loss_effective_number(_LOGITS, _TARGETS, samples_per_class=(10, 10), beta=1.5)
+
+
+def test_reject_bool_beta():
+    with pytest.raises(ValueError, match="beta"):
+        class_balanced_loss_effective_number(_LOGITS, _TARGETS, samples_per_class=(10, 10), beta=True)
 
 
 def test_reject_samples_non_positive():

@@ -5,12 +5,15 @@ import pandas as pd
 import pytest
 
 from intraday_research.contracts.deep_sequence_exploration import (
+    OUTPUT_FILES_08O,
     OUTPUT_FILES_08X,
     REQUIRED_TRIAL_LEDGER_COLUMNS,
+    check_08o_real_readout_completeness,
     validate_08x_run_manifest,
     validate_08x_search_space,
     validate_trial_ledger_frame,
 )
+from intraday_research.stages.validation_budget_ledger import read_ledger_frame
 from intraday_research.stages import deep_sequence_exploration as m
 
 
@@ -107,6 +110,96 @@ def test_unknown_future_run_switch_raises(tmp_path):
         m.run_stage(config, output_dir=tmp_path)
     assert "RUN_08X_FUTURE_THING" in str(exc.value)
     assert list(tmp_path.iterdir()) == []
+
+
+def _official_prediction_rows() -> pd.DataFrame:
+    return pd.DataFrame(
+        [
+            {"seed": 1, "ticker": "AAA", "y_true": 0, "y_pred": 0},
+            {"seed": 1, "ticker": "AAA", "y_true": 1, "y_pred": 1},
+            {"seed": 1, "ticker": "BBB", "y_true": 0, "y_pred": 0},
+            {"seed": 1, "ticker": "BBB", "y_true": 1, "y_pred": 1},
+        ]
+    )
+
+
+def test_08o_official_readout_writes_artifacts_after_ledger_append(tmp_path):
+    predictions_path = tmp_path / "official_validation_predictions.csv"
+    decision_record = tmp_path / "08o_decision_record.json"
+    ledger_path = tmp_path / "notebook07_validation_budget_ledger.csv"
+    _official_prediction_rows().to_csv(predictions_path, index=False)
+    decision_record.write_text("{}", encoding="utf-8")
+    config = {
+        "run_switches": {"RUN_08O_OFFICIAL_VALIDATION_READOUT": True},
+        "inputs": {
+            "official_validation_predictions_csv": str(predictions_path),
+            "08o_decision_record": str(decision_record),
+            "validation_budget_ledger": str(ledger_path),
+        },
+        "frozen_candidate": {"architecture_family": "dlinear_only"},
+    }
+
+    m.run_stage(config, output_dir=tmp_path / "out")
+
+    written = {p.name for p in (tmp_path / "out").iterdir() if p.is_file()}
+    assert set(OUTPUT_FILES_08O) - {"08o_decision_record.json", "08o_run_manifest.json"} <= written
+    verdict = check_08o_real_readout_completeness(tmp_path / "out")
+    assert verdict["is_real_readout"] is True
+    ledger = read_ledger_frame(ledger_path)
+    assert len(ledger) == 1
+    assert ledger.loc[0, "appended_by_notebook"] == "08O"
+    assert ledger.loc[0, "decision_timing"] == "before_official_validation_read"
+    assert int(ledger.loc[0, "official_validation_rows_inspected"]) == 0
+
+
+def test_08o_readout_appends_ledger_before_prediction_file_read(tmp_path):
+    predictions_path = tmp_path / "official_validation_predictions.csv"
+    decision_record = tmp_path / "08o_decision_record.json"
+    ledger_path = tmp_path / "notebook07_validation_budget_ledger.csv"
+    decision_record.write_text("{}", encoding="utf-8")
+    config = {
+        "run_switches": {"RUN_08O_OFFICIAL_VALIDATION_READOUT": True},
+        "inputs": {
+            "official_validation_predictions_csv": str(predictions_path),
+            "08o_decision_record": str(decision_record),
+            "validation_budget_ledger": str(ledger_path),
+        },
+    }
+
+    with pytest.raises(FileNotFoundError):
+        m.run_stage(config, output_dir=tmp_path / "out")
+
+    ledger = read_ledger_frame(ledger_path)
+    assert len(ledger) == 1
+    assert ledger.loc[0, "appended_by_notebook"] == "08O"
+
+
+def test_08o_readout_requires_entry_gate_decision_record(tmp_path):
+    predictions_path = tmp_path / "official_validation_predictions.csv"
+    _official_prediction_rows().to_csv(predictions_path, index=False)
+    config = {
+        "run_switches": {"RUN_08O_OFFICIAL_VALIDATION_READOUT": True},
+        "inputs": {
+            "official_validation_predictions_csv": str(predictions_path),
+            "08o_decision_record": str(tmp_path / "missing_decision_record.json"),
+            "validation_budget_ledger": str(tmp_path / "ledger.csv"),
+        },
+    }
+
+    with pytest.raises(FileNotFoundError, match="decision record missing"):
+        m.run_stage(config, output_dir=tmp_path / "out")
+
+
+def test_schema_smoke_and_08o_readout_must_be_separate_invocations(tmp_path):
+    config = {
+        "run_switches": {
+            "RUN_08X_SCHEMA_SMOKE": True,
+            "RUN_08O_OFFICIAL_VALIDATION_READOUT": True,
+        }
+    }
+
+    with pytest.raises(ValueError, match="separate invocations"):
+        m.run_stage(config, output_dir=tmp_path)
 
 
 def test_schema_smoke_unvalidated_csv_headers(tmp_path):

@@ -9,8 +9,11 @@ the stage emits all 8 section 13.1 08X artifacts in minimal-valid mode
 (header-only CSVs, minimal JSON), each passing its contract validator. No
 trial loop, no fold construction, no model fit, no official-validation read.
 
-Other RUN_08X_* / RUN_08F_* / RUN_08O_* / BACKUP_* switches are not migrated
-in this slice and raise NotImplementedError with the offending switch name.
+The package stage also supports RUN_08O_OFFICIAL_VALIDATION_READOUT from an
+already-frozen official-validation prediction CSV. It appends the project
+validation-budget ledger intent row before reading that CSV. Other RUN_08X_* /
+RUN_08F_* / RUN_08O_* / BACKUP_* switches remain unmigrated and raise
+NotImplementedError with the offending switch name.
 
 Governance supersession (recorded in spec section 7): tech design section 6.1's
 "no active import from intraday_research" is stale frozen notebook-posture
@@ -30,6 +33,8 @@ from collections.abc import Mapping
 from pathlib import Path
 from typing import Any
 
+import pandas as pd
+
 from intraday_research.contracts.deep_sequence_exploration import (
     OUTPUT_FILES_08X,
     REQUIRED_TRIAL_LEDGER_COLUMNS,
@@ -44,6 +49,11 @@ from intraday_research.stages.deep_sequence_schema_smoke import (
     resolve_output_dir,
     write_schema_smoke_artifacts,
 )
+from intraday_research.stages.deep_sequence_official_readout import (
+    resolve_08o_readout_inputs,
+    write_08o_readout_artifacts,
+)
+from intraday_research.stages.validation_budget_ledger import ValidationBudgetLedger
 
 
 STAGE_NAME = "deep_sequence_exploration"
@@ -52,6 +62,7 @@ REQUIRED_ARTIFACTS: tuple[str, ...] = (
 )
 
 SCHEMA_SMOKE_SWITCH = "RUN_08X_SCHEMA_SMOKE"
+OFFICIAL_READOUT_SWITCH = "RUN_08O_OFFICIAL_VALIDATION_READOUT"
 # Explicit enumeration of the 13 non-smoke switches declared in
 # `configs/stages/deep_sequence_exploration.yaml`. Used by the parametrized
 # regression test to confirm each is rejected by name. The impl rejects ANY
@@ -68,7 +79,6 @@ OTHER_SWITCHES: tuple[str, ...] = (
     "RUN_08F_CANDIDATE_COMPRESSION",
     "RUN_08F_WRITE_FREEZE_RECORD",
     "RUN_08O_ENTRY_GATE",
-    "RUN_08O_OFFICIAL_VALIDATION_READOUT",
     "RUN_08O_AGGREGATE_AND_WRITE_MANIFEST",
     "BACKUP_NOTEBOOK08_TO_GOOGLE_DRIVE",
 )
@@ -98,22 +108,29 @@ def run_stage(
 
     # Codex impl review P1-1: prefix-based detection catches future
     # RUN_*/BACKUP_* switches that the YAML may grow but this slice does
-    # not yet migrate. SCHEMA_SMOKE_SWITCH is the sole positive case.
+    # not yet migrate. Only explicitly handled switches are positive cases.
+    handled_switches = {SCHEMA_SMOKE_SWITCH, OFFICIAL_READOUT_SWITCH}
     enabled_others = sorted(
         name for name, value in switches.items()
         if bool(value)
-        and name != SCHEMA_SMOKE_SWITCH
+        and name not in handled_switches
         and name.startswith(_UNIMPLEMENTED_SWITCH_PREFIXES)
     )
     if enabled_others:
         raise NotImplementedError(
             f"Stage '{STAGE_NAME}' slice #5F-1 only implements "
-            f"{SCHEMA_SMOKE_SWITCH}; the following enabled switches are not "
-            f"yet migrated: {enabled_others}"
+            f"{sorted(handled_switches)}; the following enabled switches are "
+            f"not yet migrated: {enabled_others}"
         )
 
     smoke_enabled = bool(switches.get(SCHEMA_SMOKE_SWITCH, False))
-    if not smoke_enabled:
+    readout_enabled = bool(switches.get(OFFICIAL_READOUT_SWITCH, False))
+    if smoke_enabled and readout_enabled:
+        raise ValueError(
+            f"{SCHEMA_SMOKE_SWITCH} and {OFFICIAL_READOUT_SWITCH} must run in "
+            "separate invocations"
+        )
+    if not smoke_enabled and not readout_enabled:
         logger.info(
             "stage %s: no run-switch enabled, exiting no-op", STAGE_NAME
         )
@@ -121,6 +138,10 @@ def run_stage(
 
     out = resolve_output_dir(config, output_dir)
     out.mkdir(parents=True, exist_ok=True)
+    if readout_enabled:
+        _run_08o_official_readout(config, out)
+        return
+
     logger.info("stage %s: schema-smoke writing artifacts to %s", STAGE_NAME, out)
 
     write_schema_smoke_artifacts(out)
@@ -133,3 +154,41 @@ def run_stage(
             f"schema-smoke missed expected artifacts: {sorted(missing)} "
             f"(written: {written})"
         )
+
+
+def _run_08o_official_readout(config: Mapping[str, Any], out: Path) -> None:
+    """Write 08O artifacts from frozen official-validation prediction rows."""
+    paths = resolve_08o_readout_inputs(config)
+    if not paths["decision_record"].exists():
+        raise FileNotFoundError(
+            f"08O decision record missing; run entry gate first: {paths['decision_record']}"
+        )
+
+    # AGENTS.md section 4.3: append intent BEFORE reading official-validation
+    # prediction rows or metrics.
+    ledger = ValidationBudgetLedger(paths["ledger"], appended_by_notebook="08O")
+    ledger.append_row(
+        "08o_run_manifest.json",
+        "08O",
+        "official_validation_readout_intent",
+        "before_official_validation_read",
+        "official_validation_prediction_rows",
+        model_families_considered=str(
+            config.get("frozen_candidate", {}).get("architecture_family", "")
+            if isinstance(config.get("frozen_candidate", {}), Mapping)
+            else ""
+        ),
+        profiles_or_trials_considered="frozen_primary_candidate",
+        thresholds_or_coverages_considered="n/a",
+        official_validation_rows_inspected=0,
+        train_inner_only_decision=False,
+        official_validation_informed_decision=False,
+        diagnostic_only_readout=False,
+        holdout_test_contact=False,
+        allowed_wording="pending_08o_manifest",
+        forbidden_wording="no holdout / no deploy / no live",
+        risk_note="08O package readout intent before reading official-validation prediction rows",
+    )
+
+    predictions = pd.read_csv(paths["predictions"])
+    write_08o_readout_artifacts(out, predictions)

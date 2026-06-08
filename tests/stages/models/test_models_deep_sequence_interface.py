@@ -1,12 +1,15 @@
-"""Interface contract tests for the N08 deep-sequence model subpackage scaffold.
+"""Interface contract tests for the N08 deep-sequence model subpackage.
 
-Confirms every section 7.1 classifier family / section 7.4 fusion variant:
-  - satisfies the ``SequenceClassifier`` runtime-checkable protocol;
-  - raises ``NotImplementedError`` on ``fit`` and ``predict_proba`` with a
-    message anchoring to the design / Resume Gate.
+Confirms every section 7.1 classifier family / section 7.4 fusion variant
+satisfies the ``SequenceClassifier`` runtime-checkable protocol.
 
-These tests do not exercise any substantive training behavior; that is the
-implementation half of N08 task #4 and is gated on Resume Gate section 3.
+All 10 families now have substantive bodies (their behavior is covered by their
+own test files: ``test_dlinear.py``, ``test_tcn.py``, ``test_gru.py``,
+``test_lstm.py``, ``test_fusion.py``, ``test_last_step_lightgbm_control.py``,
+``test_last_step_mlp_ablation.py``), so ``_NOT_YET_IMPLEMENTED_FAMILIES`` is now
+empty; the scaffold-``NotImplementedError`` anchor tests below parametrize over
+it and therefore no longer run any case (kept as a regression tripwire — a new
+scaffold added to the list would re-activate them).
 """
 
 import numpy as np
@@ -44,12 +47,11 @@ _ALL_FAMILIES = [
     SmallFusionMLP,
 ]
 
-# Subset that still raises NotImplementedError on fit / predict_proba. As
-# families land in #5A, #5C, ..., they move out of this list and into their
-# own behavioral test file (e.g. test_last_step_lightgbm_control.py for #5A).
-_NOT_YET_IMPLEMENTED_FAMILIES = [
-    LastStepMLPSequenceAblation,
-]
+# Subset that still raises NotImplementedError on fit / predict_proba. Now EMPTY
+# — all 10 families are implemented (each has its own behavioral test file). Kept
+# as a regression tripwire: a newly added scaffold goes here to re-arm the
+# NotImplementedError-anchor tests below.
+_NOT_YET_IMPLEMENTED_FAMILIES: list = []
 
 
 @pytest.mark.parametrize("cls", _ALL_FAMILIES)

@@ -5,19 +5,29 @@
                                       beat (section 11.1 tier escalation +
                                       section 9.4 hard stop). Implemented in
                                       task #5A.
-  - ``LastStepMLPSequenceAblation``   last-step features fit by a tiny MLP;
-                                      isolates the "sequence vs. last-step"
-                                      effect. Still a scaffold; lands later.
+  - ``LastStepMLPSequenceAblation``   last-step features fit by a tiny CPU-PyTorch
+                                      MLP; isolates the "sequence vs. last-step"
+                                      effect. Implemented in task #5D-7 as a thin
+                                      ``_SequenceTorchClassifier`` subclass.
 
 Both consume the same ``X`` shape as deep families
 (``(n_samples, window_size, n_features)``) and internally slice to the last
 bar (``X[:, -1, :]``). The N08 orchestrator does not need to know whether a
 candidate is a deep model or a control.
+
+Dependency note: since #5D-7 this module imports ``torch`` (the MLP ablation is a
+``_SequenceTorchClassifier`` subclass), so importing ``controls`` pulls torch —
+``LastStepLightGBMControl`` no longer has a torch-free import path. This is fine
+for the torch-centric N08 env; the lazy ``__init__`` keeps ``base``/``folds``
+imports torch-free regardless. ``lightgbm`` itself stays a deferred import.
 """
 
 from __future__ import annotations
 
 import numpy as np
+from torch import nn
+
+from intraday_research.models.deep_sequence._torch_base import _SequenceTorchClassifier
 
 
 class LastStepLightGBMControl:
@@ -142,11 +152,41 @@ class LastStepLightGBMControl:
         return full
 
 
-class LastStepMLPSequenceAblation:
-    """Last-step MLP ablation (sklearn-style scaffold).
+# Spec-introduced "tiny MLP head" axes (mirror SmallFusionMLP). 08X-eligibility:
+# last_step_mlp_sequence_ablation is already a SEARCH_ELIGIBLE family, but these
+# sub-axes need a config / search-space mirror before an 08X run varies them.
+_LAST_STEP_HIDDEN_SIZES: tuple[int, ...] = (8, 16, 32)
+_LAST_STEP_DROPOUTS: tuple[float, ...] = (0.0, 0.05, 0.10)
 
-    Isolates the contribution of sequence information by training a tiny MLP
-    on ``X[:, -1, :]`` only.
+
+class _LastStepMLPModule(nn.Module):
+    """Tiny MLP over the LAST bar only -> 2 logits. Discarding the rest of the
+    window is the ablation (isolates the last-step contribution)."""
+
+    def __init__(self, *, n_features: int, hidden_size: int, dropout: float) -> None:
+        super().__init__()
+        self.net = nn.Sequential(
+            nn.Linear(n_features, hidden_size),
+            nn.ReLU(),
+            nn.Dropout(dropout),
+            nn.Linear(hidden_size, 2),
+        )
+
+    def forward(self, x: "object") -> "object":  # x: (b, L, C)
+        return self.net(x[:, -1, :])  # last completed bar -> (b, 2)
+
+
+class LastStepMLPSequenceAblation(_SequenceTorchClassifier):
+    """Last-step MLP ablation — a tiny MLP on ``X[:, -1, :]`` only, via the shared
+    ``_SequenceTorchClassifier`` base (fit / determinism / chronological-tail
+    early stop / predict_proba all inherited). The rest of the window is
+    intentionally discarded so this baseline isolates the sequence-vs-last-step
+    contribution the deep families must beat (design §14.5 / §11.1 / §9.4). No
+    causal gate is needed — it reads only the last completed bar, no future path.
+
+    08X-eligibility: the ``last_step_mlp_sequence_ablation`` family is already
+    search-eligible, but ``hidden_size`` / ``dropout`` are spec-introduced
+    sub-axes needing a config / search-space mirror before an 08X run varies them.
     """
 
     def __init__(
@@ -155,17 +195,38 @@ class LastStepMLPSequenceAblation:
         hidden_size: int = 16,
         dropout: float = 0.0,
         random_state: int | None = None,
+        max_epochs: int = 50,
+        learning_rate: float = 1e-3,
+        batch_size: int = 256,
+        early_stopping_patience: int = 5,
+        early_stopping_fraction: float = 0.15,
+        weight_decay: float = 0.0,
     ) -> None:
         self.hidden_size = hidden_size
         self.dropout = dropout
-        self.random_state = random_state
-
-    def fit(self, X: np.ndarray, y: np.ndarray) -> "LastStepMLPSequenceAblation":
-        raise NotImplementedError(
-            "LastStepMLPSequenceAblation.fit is a scaffold; N08 task #4 half 2."
+        super().__init__(
+            random_state=random_state,
+            max_epochs=max_epochs,
+            learning_rate=learning_rate,
+            batch_size=batch_size,
+            early_stopping_patience=early_stopping_patience,
+            early_stopping_fraction=early_stopping_fraction,
+            weight_decay=weight_decay,
         )
 
-    def predict_proba(self, X: np.ndarray) -> np.ndarray:
-        raise NotImplementedError(
-            "LastStepMLPSequenceAblation.predict_proba is a scaffold; see fit."
+    def _validate_axes(self) -> None:
+        if type(self.hidden_size) is not int or self.hidden_size not in _LAST_STEP_HIDDEN_SIZES:
+            raise ValueError(
+                f"hidden_size must be one of {_LAST_STEP_HIDDEN_SIZES} (exact int); "
+                f"got {self.hidden_size!r}"
+            )
+        if type(self.dropout) is not float or self.dropout not in _LAST_STEP_DROPOUTS:
+            raise ValueError(
+                f"dropout must be one of {_LAST_STEP_DROPOUTS} (exact float); "
+                f"got {self.dropout!r}"
+            )
+
+    def _build_module(self, *, window_size: int, n_features: int) -> nn.Module:
+        return _LastStepMLPModule(
+            n_features=n_features, hidden_size=self.hidden_size, dropout=self.dropout
         )

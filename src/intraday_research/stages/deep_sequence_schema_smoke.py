@@ -29,6 +29,9 @@ from intraday_research.stages.io_helpers import (
     sha256_file_or_unavailable,
     write_json,
 )
+from intraday_research.stages.run_manifest import (
+    write_run_manifest as write_run_manifest_json,
+)
 
 
 SCHEMA_SMOKE_VERSION = "08x_schema_smoke_v1"
@@ -214,8 +217,14 @@ def _write_run_manifest(out: Path) -> None:
         "trial_count_failed": 0,
         "trial_count_skipped": 0,
     }
-    validate_08x_run_manifest(payload)
-    write_json(out / "08x_run_manifest.json", payload)
+    write_run_manifest_json(
+        out / "08x_run_manifest.json",
+        payload,
+        validator=validate_08x_run_manifest,
+        stage="08X",
+        scope="exploratory",
+        false_fields=("official_validation_used", "holdout_test_authorized"),
+    )
 
 
 def _write_environment_manifest(out: Path) -> None:

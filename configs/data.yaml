@@ -1,0 +1,60 @@
+# Raw-data manifest for intraday_stock_direction_research.
+#
+# Single source of truth for WHERE the five-ticker raw bars live and HOW they
+# become the 5-minute frame the package data layer consumes. Mirrors the
+# Stage-0 (config_screening) loader exactly so 08X reuses the SAME raw->5min
+# recipe (AGENTS.md section 5: split/label/feature/window rules must not drift
+# between stages).
+#
+# These Google Drive file IDs are the same ones Stage 0 already uses
+# (scripts/create_config_screening_colab_notebook.py RAW_DRIVE_FILES); they are
+# not secrets. The files are owned/shared by the original data provider.
+
+version: 1
+research_scope: validation_only
+
+tickers: [CSCO, JPM, KO, MSFT, WMT]
+
+# --- Raw source (1-minute .txt bars) ------------------------------------------
+raw_source:
+  kind: one_minute_txt
+  drive_folder_id: "154SlcH3nViUcvPXFBM-E4NPg_ybljBTG"
+  drive_folder_name: "s&p 100 adjusted 1 min data"
+  # Download target inside the Colab runtime (NOT a mounted Drive path).
+  local_download_dir: "/content/stage0_raw_stock_data"
+  files:
+    CSCO: { name: "CSCO.txt", file_id: "17A49kUiMELuQqdkOhw1KrpudjP5i5xIN" }
+    JPM:  { name: "JPM.txt",  file_id: "11UQUJKVXTrBb8XFWY5Z8JDQ8_4i_DE-q" }
+    KO:   { name: "KO.txt",   file_id: "1XmtwuZ2dTP20NsU27w5dMyRdSvdnNTSn" }
+    MSFT: { name: "MSFT.txt", file_id: "1Ud1SQpQbaiRKemFf9dgu1o_raUPnFvGs" }
+    WMT:  { name: "WMT.txt",  file_id: "1NNfsoUJrrsj2ae5EnC-PTPcZs_QGR_7c" }
+  # .txt schema: comma-separated, optional "Date" header row.
+  txt_columns: [Date, Time, Open, High, Low, Close, Volume]
+  date_format: "%m/%d/%Y"
+  time_format: "%H:%M"
+
+# --- Canonical 1min -> 5min recipe (verbatim from Stage 0) --------------------
+# A future package loader (#5F-3) MUST replicate this exactly.
+resample:
+  rule: "5min"
+  agg: { open: first, high: max, low: min, close: last, volume: sum }
+  drop_na_subset: [open, high, low, close, volume]
+  # Regular trading hours filter applied to BOTH the 1-min rows and the
+  # resampled 5-min rows (inclusive on both ends).
+  market_open: "09:30"
+  market_close: "16:00"
+
+# --- Holdout boundary (fail-loud) ---------------------------------------------
+# Bars at or after val_end belong to the closed holdout/test partition and must
+# NEVER be read/scored. The Stage-0 loader caps the .txt read before this date;
+# the package data/raw_bars.py loader raises if any bar >= val_end survives.
+boundaries:
+  val_end: "2017-01-25"
+
+# --- Output frame the package data layer consumes -----------------------------
+five_minute_frame_columns: [ticker, timestamp, open, high, low, close, volume]
+
+# NOTE: data/raw_bars.py::load_ticker_bars currently expects ALREADY-5-minute
+# CSVs ({ticker: csv_path}). The .txt -> 5min resample step above is NOT yet in
+# the package (it lives only in the Stage-0 notebook). Wiring it into the 08X
+# real-data path is sub-slice #5F-3.

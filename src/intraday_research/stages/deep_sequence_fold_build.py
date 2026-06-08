@@ -20,6 +20,7 @@ rows are a later (fit) slice concern.
 from __future__ import annotations
 
 import json
+import math
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
@@ -35,7 +36,11 @@ from intraday_research.contracts.deep_sequence_exploration import (
     validate_08x_fold_results_frame,
     validate_08x_run_manifest,
 )
+from intraday_research.data.features import FEATURE_SETS
+from intraday_research.data.labels import H03_BPS1P5, H09_BPS3P0, H24_BPS7P5
+from intraday_research.data.raw_bars import load_ticker_bars_txt
 from intraday_research.data.splits import PARTITION_TRAIN, PARTITION_VALIDATION
+from intraday_research.data.windowed_index import build_train_inner_windowed_index
 from intraday_research.models.deep_sequence.folds import (
     embargoed_train_inner_folds,
     purged_time_series_folds,
@@ -63,6 +68,14 @@ _TIER_N_FOLDS: dict[str, int] = {
     "aggressive": 3,
     "schema_smoke": 2,
     "build_folds": 2,
+}
+
+# label_config -> (horizon_k, threshold_bps), sourced from the data.labels frozen
+# dicts (no drift). Used to cross-check frozen_candidate provenance (#5F-4 Q3).
+LABEL_CONFIGS: dict[str, tuple[int, float]] = {
+    "h03_bps1p5": (H03_BPS1P5["horizon_k"], H03_BPS1P5["threshold_bps"]),
+    "h09_bps3p0": (H09_BPS3P0["horizon_k"], H09_BPS3P0["threshold_bps"]),
+    "h24_bps7p5": (H24_BPS7P5["horizon_k"], H24_BPS7P5["threshold_bps"]),
 }
 
 
@@ -211,20 +224,24 @@ def resolve_train_inner_index(
 ) -> tuple[np.ndarray, np.ndarray]:
     """Return ``(timestamps, ticker_ids)`` for the OFFICIAL-TRAIN partition only.
 
-    The windowed index is taken from ``injected_window_index`` (tests / runner)
-    or ``config['windowed_index']``. Auto-loading the windowed index from raw
-    bars (``raw_bars -> features -> labels -> splits -> windows``) is deferred to
-    the next slice; until then this fails loud rather than silently returning an
-    empty index.
+    Windowed-index source precedence (#5F-4):
+      1. ``injected_window_index`` arg (tests / runner);
+      2. ``config['windowed_index']`` (tests / runner);
+      3. real data: ``config['data']['txt_manifest']`` ({ticker: local .txt path})
+         loaded via ``load_ticker_bars_txt`` -> ``build_train_inner_windowed_index``
+         with params from ``config['frozen_candidate']``;
+      4. else ``NotImplementedError``.
     """
     window_index = injected_window_index
     if window_index is None:
         window_index = config.get("windowed_index")
     if window_index is None:
+        window_index = _build_window_index_from_data(config)
+    if window_index is None:
         raise NotImplementedError(
-            "real-data windowed-index loading from raw bars is a later slice "
-            "(#5F-3); pass injected_window_index or config['windowed_index'] "
-            "with target_partition / target_timestamps / target_ticker_ids"
+            "no windowed index available: pass injected_window_index, "
+            "config['windowed_index'], or config['data']['txt_manifest'] "
+            "(+ config['frozen_candidate'])"
         )
     if not isinstance(window_index, Mapping):
         raise ValueError("windowed_index must be a mapping of numpy arrays")
@@ -403,6 +420,87 @@ def _candidate_provenance_id(candidate: Mapping[str, Any]) -> str:
     if candidate_id:
         return str(candidate_id)
     return f"frozen_candidate_horizon_k={int(candidate['horizon_k'])}"
+
+
+def _build_window_index_from_data(
+    config: Mapping[str, Any],
+) -> dict[str, np.ndarray] | None:
+    """Build the windowed index from real ``.txt`` data, or None if not configured.
+
+    Reads ``config['data']['txt_manifest']`` ({ticker: local .txt path}) + the
+    frozen-candidate chain params, runs ``load_ticker_bars_txt`` ->
+    ``build_train_inner_windowed_index``. Returns None (not an error) when no data
+    manifest is present, so the caller falls through to NotImplementedError.
+    """
+    data = config.get("data")
+    if not isinstance(data, Mapping):
+        return None
+    manifest = data.get("txt_manifest")
+    if not manifest:
+        return None
+    if not isinstance(manifest, Mapping):
+        raise ValueError(
+            "config['data']['txt_manifest'] must be a {ticker: path} mapping"
+        )
+    feature_set, horizon_k, threshold_bps, window_size = _resolve_chain_params(config)
+    frame = load_ticker_bars_txt(manifest)
+    return build_train_inner_windowed_index(
+        frame,
+        feature_set=feature_set,
+        horizon_k=horizon_k,
+        threshold_bps=threshold_bps,
+        window_size=window_size,
+    )
+
+
+def _resolve_chain_params(config: Mapping[str, Any]) -> tuple[str, int, float, int]:
+    """Resolve + provenance-check the data-chain params from ``frozen_candidate``.
+
+    Returns ``(feature_set, horizon_k, threshold_bps, window_size)``. When
+    ``label_config`` is present it MUST map (via ``LABEL_CONFIGS``) to the explicit
+    ``horizon_k`` + ``threshold_bps``; mismatch fails loud (Codex #5F-4 Q3).
+    """
+    candidate = _frozen_candidate(config)
+    feature_set = candidate.get("feature_set")
+    if feature_set not in FEATURE_SETS:
+        raise ValueError(
+            "frozen_candidate.feature_set must be one of "
+            f"{sorted(FEATURE_SETS)}; got {feature_set!r}"
+        )
+    horizon_k = _require_int(
+        candidate["horizon_k"], "frozen_candidate.horizon_k", minimum=1
+    )
+    window_size = _require_int(
+        candidate.get("window_size"), "frozen_candidate.window_size", minimum=1
+    )
+    threshold_bps = candidate.get("threshold_bps")
+    if (
+        isinstance(threshold_bps, bool)
+        or not isinstance(threshold_bps, (int, float))
+        or threshold_bps < 0
+    ):
+        raise ValueError(
+            "frozen_candidate.threshold_bps must be a non-negative number; "
+            f"got {threshold_bps!r}"
+        )
+    label_config = candidate.get("label_config")
+    if label_config is not None:
+        if label_config not in LABEL_CONFIGS:
+            raise ValueError(
+                f"frozen_candidate.label_config unknown: {label_config!r} "
+                f"(known: {sorted(LABEL_CONFIGS)})"
+            )
+        expected_k, expected_thr = LABEL_CONFIGS[label_config]
+        if horizon_k != expected_k or not math.isclose(
+            float(threshold_bps), float(expected_thr), abs_tol=1e-12, rel_tol=0.0
+        ):
+            raise ValueError(
+                f"frozen_candidate.label_config {label_config!r} maps to "
+                f"(horizon_k={expected_k}, threshold_bps={expected_thr}) but "
+                f"frozen_candidate has (horizon_k={horizon_k}, "
+                f"threshold_bps={threshold_bps})"
+            )
+    return feature_set, horizon_k, float(threshold_bps), window_size
 
 
 def _assert_label_horizon_provenance(

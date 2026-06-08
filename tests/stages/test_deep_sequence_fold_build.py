@@ -133,7 +133,7 @@ def test_resolve_train_inner_index_filters_to_train_partition():
 
 
 def test_resolve_train_inner_index_requires_window_index():
-    with pytest.raises(NotImplementedError, match="later slice"):
+    with pytest.raises(NotImplementedError, match="no windowed index available"):
         resolve_train_inner_index({})
 
 
@@ -266,3 +266,93 @@ def test_resolve_train_inner_index_rejects_unexpected_partition_code():
     wi["target_partition"][0] = np.int8(7)
     with pytest.raises(ValueError, match="unexpected partition codes"):
         resolve_train_inner_index({}, injected_window_index=wi)
+
+
+# --------------------------------------------------------------------------
+# #5F-4: real-data chain (synthetic .txt end-to-end)
+# --------------------------------------------------------------------------
+
+def _write_multiday_txt(path, dates, *, bars_per_day=50, base=100.0):
+    """Per-ticker 1-minute .txt over several train days (all < VALIDATION_START)."""
+    lines = []
+    for date in dates:
+        for i in range(bars_per_day):
+            total = 9 * 60 + 30 + i
+            hh, mm = divmod(total, 60)
+            o = base + i * 0.05
+            lines.append(f"{date},{hh:02d}:{mm:02d},{o},{o + 0.5},{o - 0.5},{o + 0.2},{1000 + i}")
+    path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    return path
+
+
+_TRAIN_DATES = ["09/09/2013", "09/10/2013", "09/11/2013", "09/12/2013"]  # all < 2013-09-16
+
+
+def test_run_stage_build_folds_on_real_txt_end_to_end(tmp_path):
+    a = _write_multiday_txt(tmp_path / "AAA.txt", _TRAIN_DATES, base=100.0)
+    b = _write_multiday_txt(tmp_path / "BBB.txt", _TRAIN_DATES, base=50.0)
+    config = {
+        "run_switches": {"RUN_08X_BUILD_TRAIN_INNER_FOLDS": True},
+        "data": {"txt_manifest": {"AAA": str(a), "BBB": str(b)}},
+        "fold_plan": {
+            "selected_fold_modes": ["rolling_origin_folds"],
+            "n_folds": 2,
+            "label_horizon_k": 3,
+            "inner_validation_size": 2,
+        },
+        "frozen_candidate": {
+            "candidate_id": "cand_h03",
+            "label_config": "h03_bps1p5",
+            "horizon_k": 3,
+            "threshold_bps": 1.5,
+            "feature_set": "price_action_core",
+            "window_size": 3,
+        },
+    }
+    stage.run_stage(config, output_dir=tmp_path)
+    df = pd.read_csv(tmp_path / "08x_fold_results.csv")
+    assert not df.empty
+    validate_08x_fold_results_frame(df, require_non_empty=True)
+    assert set(df["fold_scheme"]) == {"rolling_origin_folds"}
+    assert (df["train_inner_fit_n"] > 0).all()
+    assert (df["train_inner_validation_n"] > 0).all()
+
+
+def test_build_folds_label_config_mismatch_fails(tmp_path):
+    a = _write_multiday_txt(tmp_path / "AAA.txt", _TRAIN_DATES)
+    config = {
+        "run_switches": {"RUN_08X_BUILD_TRAIN_INNER_FOLDS": True},
+        "data": {"txt_manifest": {"AAA": str(a)}},
+        "fold_plan": {
+            "selected_fold_modes": ["rolling_origin_folds"],
+            "n_folds": 2,
+            "label_horizon_k": 3,
+            "inner_validation_size": 2,
+        },
+        # label_config h09 maps to (9, 3.0) but explicit horizon_k/threshold say (3, 1.5)
+        "frozen_candidate": {
+            "label_config": "h09_bps3p0",
+            "horizon_k": 3,
+            "threshold_bps": 1.5,
+            "feature_set": "price_action_core",
+            "window_size": 3,
+        },
+    }
+    with pytest.raises(ValueError, match="label_config"):
+        stage.run_stage(config, output_dir=tmp_path)
+
+
+def test_build_folds_no_data_no_index_raises_not_implemented(tmp_path):
+    config = {
+        "run_switches": {"RUN_08X_BUILD_TRAIN_INNER_FOLDS": True},
+        "fold_plan": {
+            "selected_fold_modes": ["rolling_origin_folds"],
+            "n_folds": 2,
+            "label_horizon_k": 3,
+            "inner_validation_size": 2,
+        },
+        "frozen_candidate": {"horizon_k": 3},
+        # no windowed_index, no data txt_manifest
+    }
+    with pytest.raises(NotImplementedError):
+        stage.run_stage(config, output_dir=tmp_path)

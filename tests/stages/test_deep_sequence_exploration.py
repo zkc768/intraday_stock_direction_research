@@ -9,6 +9,7 @@ from intraday_research.contracts.deep_sequence_exploration import (
     OUTPUT_FILES_08X,
     REQUIRED_TRIAL_LEDGER_COLUMNS,
     check_08o_real_readout_completeness,
+    validate_08o_run_manifest,
     validate_08x_run_manifest,
     validate_08x_search_space,
     validate_trial_ledger_frame,
@@ -115,36 +116,110 @@ def test_unknown_future_run_switch_raises(tmp_path):
 def _official_prediction_rows() -> pd.DataFrame:
     return pd.DataFrame(
         [
-            {"seed": 1, "ticker": "AAA", "y_true": 0, "y_pred": 0},
-            {"seed": 1, "ticker": "AAA", "y_true": 1, "y_pred": 1},
-            {"seed": 1, "ticker": "BBB", "y_true": 0, "y_pred": 0},
-            {"seed": 1, "ticker": "BBB", "y_true": 1, "y_pred": 1},
+            {
+                "seed": 1,
+                "ticker": "AAA",
+                "candidate_id": "candidate_a",
+                "official_validation_row_id": "row_1",
+                "y_true": 0,
+                "y_pred": 0,
+            },
+            {
+                "seed": 1,
+                "ticker": "AAA",
+                "candidate_id": "candidate_a",
+                "official_validation_row_id": "row_2",
+                "y_true": 1,
+                "y_pred": 1,
+            },
+            {
+                "seed": 1,
+                "ticker": "BBB",
+                "candidate_id": "candidate_a",
+                "official_validation_row_id": "row_3",
+                "y_true": 0,
+                "y_pred": 0,
+            },
+            {
+                "seed": 1,
+                "ticker": "BBB",
+                "candidate_id": "candidate_a",
+                "official_validation_row_id": "row_4",
+                "y_true": 1,
+                "y_pred": 1,
+            },
         ]
     )
 
 
+def _freeze_record() -> dict:
+    return {
+        "stage": "08F",
+        "scope": "diagnostic",
+        "primary_candidate_id": "candidate_a",
+        "fallback_candidate_id": "candidate_b",
+        "fallback_activation_rule": "Activate fallback only if primary fails before scoring official validation.",
+        "config_hash": "deadbeef" * 4,
+        "architecture_family": "dlinear_only",
+        "frozen_architecture_params": {"hidden_size": 8},
+        "frozen_loss": "cross_entropy",
+        "frozen_hpo_method": "random_search",
+        "frozen_seed_list": [1],
+        "frozen_metric_list": ["macro_f1", "balanced_accuracy"],
+        "frozen_wording_rule": "per AGENTS.md section 4.2.5a",
+        "paper_safe_score": 0.1,
+        "official_validation_used_for_selection": False,
+        "holdout_test_authorized": False,
+    }
+
+
+def _write_freeze_and_decision(tmp_path) -> tuple[object, object]:
+    freeze_record = tmp_path / "08f_candidate_freeze_record.json"
+    decision_record = tmp_path / "08o_decision_record.json"
+    freeze_record.write_text(json.dumps(_freeze_record()), encoding="utf-8")
+    decision_record.write_text(
+        json.dumps(
+            {
+                "official_validation_used_for_selection": False,
+                "holdout_test_authorized": False,
+            }
+        ),
+        encoding="utf-8",
+    )
+    return freeze_record, decision_record
+
+
 def test_08o_official_readout_writes_artifacts_after_ledger_append(tmp_path):
     predictions_path = tmp_path / "official_validation_predictions.csv"
-    decision_record = tmp_path / "08o_decision_record.json"
     ledger_path = tmp_path / "notebook07_validation_budget_ledger.csv"
+    freeze_record, decision_record = _write_freeze_and_decision(tmp_path)
     _official_prediction_rows().to_csv(predictions_path, index=False)
-    decision_record.write_text("{}", encoding="utf-8")
     config = {
         "run_switches": {"RUN_08O_OFFICIAL_VALIDATION_READOUT": True},
         "inputs": {
             "official_validation_predictions_csv": str(predictions_path),
             "08o_decision_record": str(decision_record),
+            "08f_candidate_freeze_record": str(freeze_record),
             "validation_budget_ledger": str(ledger_path),
+            "expected_tickers": ["AAA", "BBB"],
         },
-        "frozen_candidate": {"architecture_family": "dlinear_only"},
     }
 
     m.run_stage(config, output_dir=tmp_path / "out")
 
     written = {p.name for p in (tmp_path / "out").iterdir() if p.is_file()}
-    assert set(OUTPUT_FILES_08O) - {"08o_decision_record.json", "08o_run_manifest.json"} <= written
+    assert set(OUTPUT_FILES_08O) - {"08o_decision_record.json"} <= written
     verdict = check_08o_real_readout_completeness(tmp_path / "out")
     assert verdict["is_real_readout"] is True
+    manifest = json.loads((tmp_path / "out" / "08o_run_manifest.json").read_text("utf-8"))
+    validate_08o_run_manifest(manifest)
+    assert manifest["schema_only_stub"] is False
+    assert manifest["primary_candidate_id"] == "candidate_a"
+    assert manifest["same_row_dummy_present"] is True
+    assert manifest["per_ticker_present"] is True
+    assert manifest["seed_summary_present"] is True
+    assert manifest["input_provenance"]["predictions"]["same_official_rows_for_each_seed"] is True
+    assert len(manifest["input_provenance"]["predictions"]["predictions_csv_sha256"]) == 64
     ledger = read_ledger_frame(ledger_path)
     assert len(ledger) == 1
     assert ledger.loc[0, "appended_by_notebook"] == "08O"
@@ -154,14 +229,14 @@ def test_08o_official_readout_writes_artifacts_after_ledger_append(tmp_path):
 
 def test_08o_readout_appends_ledger_before_prediction_file_read(tmp_path):
     predictions_path = tmp_path / "official_validation_predictions.csv"
-    decision_record = tmp_path / "08o_decision_record.json"
     ledger_path = tmp_path / "notebook07_validation_budget_ledger.csv"
-    decision_record.write_text("{}", encoding="utf-8")
+    freeze_record, decision_record = _write_freeze_and_decision(tmp_path)
     config = {
         "run_switches": {"RUN_08O_OFFICIAL_VALIDATION_READOUT": True},
         "inputs": {
             "official_validation_predictions_csv": str(predictions_path),
             "08o_decision_record": str(decision_record),
+            "08f_candidate_freeze_record": str(freeze_record),
             "validation_budget_ledger": str(ledger_path),
         },
     }
@@ -176,18 +251,42 @@ def test_08o_readout_appends_ledger_before_prediction_file_read(tmp_path):
 
 def test_08o_readout_requires_entry_gate_decision_record(tmp_path):
     predictions_path = tmp_path / "official_validation_predictions.csv"
+    freeze_record = tmp_path / "08f_candidate_freeze_record.json"
+    freeze_record.write_text(json.dumps(_freeze_record()), encoding="utf-8")
     _official_prediction_rows().to_csv(predictions_path, index=False)
     config = {
         "run_switches": {"RUN_08O_OFFICIAL_VALIDATION_READOUT": True},
         "inputs": {
             "official_validation_predictions_csv": str(predictions_path),
             "08o_decision_record": str(tmp_path / "missing_decision_record.json"),
+            "08f_candidate_freeze_record": str(freeze_record),
             "validation_budget_ledger": str(tmp_path / "ledger.csv"),
         },
     }
 
-    with pytest.raises(FileNotFoundError, match="decision record missing"):
+    with pytest.raises(FileNotFoundError, match="08O decision record missing"):
         m.run_stage(config, output_dir=tmp_path / "out")
+
+
+def test_08o_readout_requires_freeze_record_before_ledger_append(tmp_path):
+    predictions_path = tmp_path / "official_validation_predictions.csv"
+    decision_record = tmp_path / "08o_decision_record.json"
+    ledger_path = tmp_path / "ledger.csv"
+    _official_prediction_rows().to_csv(predictions_path, index=False)
+    decision_record.write_text("{}", encoding="utf-8")
+    config = {
+        "run_switches": {"RUN_08O_OFFICIAL_VALIDATION_READOUT": True},
+        "inputs": {
+            "official_validation_predictions_csv": str(predictions_path),
+            "08o_decision_record": str(decision_record),
+            "08f_candidate_freeze_record": str(tmp_path / "missing_freeze.json"),
+            "validation_budget_ledger": str(ledger_path),
+        },
+    }
+
+    with pytest.raises(FileNotFoundError, match="08F freeze record missing"):
+        m.run_stage(config, output_dir=tmp_path / "out")
+    assert not ledger_path.exists()
 
 
 def test_schema_smoke_and_08o_readout_must_be_separate_invocations(tmp_path):

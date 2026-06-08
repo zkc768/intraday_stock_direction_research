@@ -50,9 +50,13 @@ from intraday_research.stages.deep_sequence_schema_smoke import (
     write_schema_smoke_artifacts,
 )
 from intraday_research.stages.deep_sequence_official_readout import (
+    preflight_08o_prediction_rows,
+    preflight_08o_static_inputs,
     resolve_08o_readout_inputs,
     write_08o_readout_artifacts,
+    write_08o_run_manifest,
 )
+from intraday_research.stages.io_helpers import sha256_file
 from intraday_research.stages.validation_budget_ledger import ValidationBudgetLedger
 
 
@@ -159,10 +163,8 @@ def run_stage(
 def _run_08o_official_readout(config: Mapping[str, Any], out: Path) -> None:
     """Write 08O artifacts from frozen official-validation prediction rows."""
     paths = resolve_08o_readout_inputs(config)
-    if not paths["decision_record"].exists():
-        raise FileNotFoundError(
-            f"08O decision record missing; run entry gate first: {paths['decision_record']}"
-        )
+    preflight = preflight_08o_static_inputs(paths)
+    freeze_record = preflight["freeze_record"]
 
     # AGENTS.md section 4.3: append intent BEFORE reading official-validation
     # prediction rows or metrics.
@@ -173,12 +175,9 @@ def _run_08o_official_readout(config: Mapping[str, Any], out: Path) -> None:
         "official_validation_readout_intent",
         "before_official_validation_read",
         "official_validation_prediction_rows",
-        model_families_considered=str(
-            config.get("frozen_candidate", {}).get("architecture_family", "")
-            if isinstance(config.get("frozen_candidate", {}), Mapping)
-            else ""
-        ),
+        model_families_considered=str(freeze_record.get("architecture_family", "")),
         profiles_or_trials_considered="frozen_primary_candidate",
+        seeds_used=str(len(freeze_record.get("frozen_seed_list", []))),
         thresholds_or_coverages_considered="n/a",
         official_validation_rows_inspected=0,
         train_inner_only_decision=False,
@@ -191,4 +190,51 @@ def _run_08o_official_readout(config: Mapping[str, Any], out: Path) -> None:
     )
 
     predictions = pd.read_csv(paths["predictions"])
-    write_08o_readout_artifacts(out, predictions)
+    expected_tickers = _expected_08o_tickers(config)
+    prediction_provenance = preflight_08o_prediction_rows(
+        predictions,
+        freeze_record=freeze_record,
+        expected_tickers=expected_tickers,
+    )
+    write_08o_readout_artifacts(
+        out,
+        predictions,
+        primary_candidate_id=str(freeze_record["primary_candidate_id"]),
+        expected_seeds=tuple(prediction_provenance["seeds"]),
+        expected_tickers=expected_tickers,
+    )
+    write_08o_run_manifest(
+        out,
+        freeze_record=freeze_record,
+        static_input_provenance=preflight["static_input_provenance"],
+        prediction_provenance={
+            **prediction_provenance,
+            "predictions_csv_path": str(paths["predictions"]),
+            "predictions_csv_sha256": sha256_file(paths["predictions"]),
+        },
+        constants=_mapping_or_empty(config.get("constants", {})),
+    )
+
+
+def _expected_08o_tickers(config: Mapping[str, Any]) -> tuple[str, ...] | None:
+    inputs = _mapping_or_empty(config.get("inputs", {}))
+    policy = _mapping_or_empty(config.get("policy", {}))
+    official_validation = _mapping_or_empty(policy.get("official_validation", {}))
+    tickers = (
+        inputs.get("expected_tickers")
+        or official_validation.get("expected_tickers")
+        or config.get("expected_tickers")
+    )
+    if tickers is None:
+        return None
+    if not isinstance(tickers, (list, tuple)):
+        raise ValueError("08O expected_tickers must be a list or tuple")
+    return tuple(sorted(str(ticker) for ticker in tickers))
+
+
+def _mapping_or_empty(value: Any) -> Mapping[str, Any]:
+    if value is None:
+        return {}
+    if not isinstance(value, Mapping):
+        raise ValueError("expected mapping configuration value")
+    return value

@@ -337,6 +337,65 @@ def _mapping_or_empty(value: Any) -> Mapping[str, Any]:
     return value
 
 
+def run_full_pipeline(config: Mapping[str, Any], *, output_dir: Path | None = None) -> None:
+    """Run the complete 08 pipeline in one call.
+
+    Sequence: quick search → escalation check → medium (if passed) →
+    escalation check → aggressive (if passed) → failure map →
+    08F gate → compression → freeze record.
+
+    Call this from Colab with your config dict and it does everything.
+    08O official readout is NOT included (it's a separate, irreversible step).
+    """
+    from intraday_research.stages.deep_sequence_quick_search import (
+        check_escalation_gate,
+        run_quick_search,
+    )
+    from intraday_research.stages.deep_sequence_freeze import (
+        run_08f_candidate_compression,
+        run_08f_contract_gate,
+        run_08f_write_freeze_record,
+    )
+    from intraday_research.stages.deep_sequence_schema_smoke import resolve_output_dir
+
+    out = resolve_output_dir(config, output_dir)
+    out.mkdir(parents=True, exist_ok=True)
+
+    # 08X: quick search (always runs).
+    logger.info("=== 08X QUICK SEARCH ===")
+    run_quick_search(config, out, budget_tier="quick")
+
+    # 08X: escalation → medium.
+    gate = check_escalation_gate(out, "quick")
+    if gate["passed"]:
+        logger.info("=== 08X MEDIUM SEARCH (escalation passed) ===")
+        run_quick_search(config, out, budget_tier="medium")
+
+        # 08X: escalation → aggressive.
+        gate2 = check_escalation_gate(out, "medium")
+        if gate2["passed"]:
+            logger.info("=== 08X AGGRESSIVE SEARCH (escalation passed) ===")
+            run_quick_search(config, out, budget_tier="aggressive")
+        else:
+            logger.info("Aggressive escalation blocked: %s", gate2.get("reason"))
+    else:
+        logger.info("Medium escalation blocked: %s", gate.get("reason"))
+
+    # 08X: failure map.
+    _run_aggregate_failure_map(out)
+
+    # 08F: gate → compression → freeze.
+    logger.info("=== 08F FREEZE PIPELINE ===")
+    gate_report = run_08f_contract_gate(out)
+    if gate_report["passed"]:
+        run_08f_candidate_compression(out)
+        run_08f_write_freeze_record(out, dict(config))
+    else:
+        logger.info("08F gate failed: missing=%s", gate_report.get("missing"))
+
+    logger.info("=== 08 PIPELINE COMPLETE ===")
+
+
 def _run_aggregate_failure_map(out: Path) -> None:
     """Read failure_ledger.csv, groupby failure_type, log summary."""
     import json as _json

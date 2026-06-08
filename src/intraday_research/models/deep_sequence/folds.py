@@ -1,14 +1,23 @@
 """Train-inner fold builders for N08 section 8.2.
 
 Three allowed fold modes:
-  - ``rolling_origin_folds``        expanding-window train / inner-validation
-                                    with a label-horizon purge at the fold's
-                                    validation boundary (implemented #5B)
-  - ``purged_time_series_folds``    same purge applied to every train row whose
-                                    label horizon reaches inner-validation
-                                    (scaffold)
-  - ``embargoed_train_inner_folds``  purge plus an extra embargo gap on both
-                                    sides of inner-validation (scaffold)
+  - ``rolling_origin_folds``        FORWARD-CHAINING expanding-window train /
+                                    inner-validation with a label-horizon purge
+                                    at the fold's validation boundary (#5B)
+  - ``purged_time_series_folds``    INTERIOR-block K-fold with a symmetric
+                                    label-horizon purge (#5E-1)
+  - ``embargoed_train_inner_folds``  purged interior K-fold + an embargo gap on
+                                    both sides of inner-validation (#5E-1)
+
+Methodology scope (read before using as 08X evidence): ``rolling_origin_folds``
+is forward-chaining (train strictly precedes validation). ``purged_…`` /
+``embargoed_…`` are INTERIOR-block K-fold — a fold may train on rows AFTER its
+validation block (made leak-safe by the symmetric purge/embargo, but NOT
+forward-chaining). When these two modes back 08X candidate selection, the
+evidence must be described as "purged/embargoed interior train-inner CV", NOT as
+forward-chaining chronological validation; and they should be enabled only when
+the 08X search-space freeze EXPLICITLY selects them (a contract gate the 08X
+harness/contract owns, not this layer-1 builder).
 
 Responsibility layers (a fold builder owns only layer 1):
 
@@ -177,6 +186,10 @@ def _per_ticker_positions(timestamps: np.ndarray, ticker_ids: np.ndarray) -> dic
         raise ValueError(
             "timestamps and ticker_ids must have the same length; got "
             f"{timestamps.shape} and {ticker_ids.shape}."
+        )
+    if timestamps.shape[0] < 1:
+        raise ValueError(
+            "timestamps and ticker_ids must be non-empty (>= 1 sample); got 0."
         )
     positions: dict = {}
     for ticker in np.unique(ticker_ids):

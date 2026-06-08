@@ -194,3 +194,11 @@ def test_reject_gap_empties_a_fold():
     ts, tk = _single_ticker(12)
     with pytest.raises(ValueError, match="empty"):
         list(purged_time_series_folds(ts, tk, n_folds=3, label_horizon_k=5))
+
+
+def test_reject_empty_input():
+    # Builder-owned fail-loud message, not a bare np.concatenate error (Codex P3).
+    empty_ts = np.array([], dtype=np.int64)
+    empty_tk = np.array([], dtype=object)
+    with pytest.raises(ValueError, match="non-empty"):
+        list(purged_time_series_folds(empty_ts, empty_tk, n_folds=2, label_horizon_k=0))

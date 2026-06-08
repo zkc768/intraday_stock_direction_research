@@ -32,6 +32,12 @@ DESIGN_PATH = (
     / "NOTEBOOK08_DEEP_SEQUENCE_EXPLORATION_FREEZE_READOUT_TECHNICAL_DESIGN_2026-06-06.md"
 )
 GENERATOR_PATH = (
+    PROJECT_ROOT
+    / "scripts"
+    / "notebooks"
+    / "generate_deep_sequence_exploration_colab.py"
+)
+LEGACY_GENERATOR_PATH = (
     PROJECT_ROOT / "scripts" / "create_deep_sequence_exploration_colab_notebook.py"
 )
 CONTRACT_PATH = (
@@ -83,6 +89,15 @@ notebook_required = pytest.mark.skipif(
 def test_design_doc_exists_and_nonempty():
     text = design_text()
     assert len(text) > 1000, "design doc unexpectedly small"
+
+
+def test_generator_paths_exist_and_legacy_path_is_thin_wrapper():
+    assert GENERATOR_PATH.exists(), f"missing generator: {GENERATOR_PATH}"
+    text = LEGACY_GENERATOR_PATH.read_text(encoding="utf-8")
+    assert "from scripts.notebooks.generate_deep_sequence_exploration_colab import main" in text
+    assert 'if __name__ == "__main__":' in text
+    assert "main()" in text
+    assert "nbformat.write" not in text
 
 
 def test_design_has_pre_registration_constants_table():
@@ -179,7 +194,7 @@ def test_notebook08_inlined_contract_helper_matches_source_module():
     assert first_code_cell == contract_source, (
         "N08 notebook inlined contract helper is stale. Regenerate "
         "notebooks/deep_sequence_exploration_colab.ipynb from "
-        "scripts/create_deep_sequence_exploration_colab_notebook.py "
+        "scripts/notebooks/generate_deep_sequence_exploration_colab.py "
         "(its CONTRACT_MODULE must point at the canonical "
         "src/intraday_research/contracts/deep_sequence_exploration.py, "
         "NOT at the legacy scripts/notebook08_contract.py shim)."

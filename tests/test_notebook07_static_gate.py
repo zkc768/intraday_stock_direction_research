@@ -31,6 +31,12 @@ DESIGN_PATH = (
     / "NOTEBOOK07_VALIDATION_SYNTHESIS_AND_GAP_AUDIT_TECHNICAL_DESIGN_2026-06-06.md"
 )
 GENERATOR_PATH = (
+    PROJECT_ROOT
+    / "scripts"
+    / "notebooks"
+    / "generate_validation_synthesis_gap_audit_colab.py"
+)
+LEGACY_GENERATOR_PATH = (
     PROJECT_ROOT / "scripts" / "create_validation_synthesis_and_gap_audit_colab_notebook.py"
 )
 CONTRACT_PATH = (
@@ -82,6 +88,15 @@ notebook_required = pytest.mark.skipif(
 def test_design_doc_exists_and_nonempty():
     text = design_text()
     assert len(text) > 1000, "design doc unexpectedly small"
+
+
+def test_generator_paths_exist_and_legacy_path_is_thin_wrapper():
+    assert GENERATOR_PATH.exists(), f"missing generator: {GENERATOR_PATH}"
+    text = LEGACY_GENERATOR_PATH.read_text(encoding="utf-8")
+    assert "from scripts.notebooks.generate_validation_synthesis_gap_audit_colab import main" in text
+    assert 'if __name__ == "__main__":' in text
+    assert "main()" in text
+    assert "nbformat.write" not in text
 
 
 def test_design_has_pre_registration_constants_table():
@@ -389,7 +404,7 @@ def test_notebook07_inlined_contract_helper_matches_source_module():
     assert first_code_cell == contract_source, (
         "N07 notebook inlined contract helper is stale. Regenerate "
         "notebooks/07_validation_synthesis_and_gap_audit_colab.ipynb from "
-        "scripts/create_validation_synthesis_and_gap_audit_colab_notebook.py "
+        "scripts/notebooks/generate_validation_synthesis_gap_audit_colab.py "
         "(its CONTRACT_MODULE must point at the canonical "
         "src/intraday_research/contracts/validation_synthesis_gap_audit.py, "
         "NOT at the legacy scripts/notebook07_contract.py shim)."

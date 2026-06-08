@@ -192,6 +192,7 @@ def test_notebook08_contract_text_does_not_describe_legacy_shim_as_source():
     assert "Inline copy of `scripts/notebook08_contract.py`" not in source
     assert "sourced from notebook08_contract" not in source
     assert "see ``validate_08f_entry`` in scripts/notebook08_contract.py" not in source
+    assert "same pattern as ``scripts/notebook07_contract.py``" not in source
     assert "families subset of ARCHITECTURE_FAMILIES, single" not in source
     assert "src/intraday_research/contracts/deep_sequence_exploration.py" in source
 

@@ -3,7 +3,7 @@
 Lifts the inline validators previously embedded in
 ``tests/test_notebook08_artifact_contract.py`` into a reusable module so the
 N08 colab notebook generator can inline the same logic for Colab portability
-(same pattern as ``scripts/notebook07_contract.py``).
+from this canonical package path.
 
 The validators here mirror the design rules in
 ``docs/NOTEBOOK08_DEEP_SEQUENCE_EXPLORATION_FREEZE_READOUT_TECHNICAL_DESIGN_2026-06-06.md``:

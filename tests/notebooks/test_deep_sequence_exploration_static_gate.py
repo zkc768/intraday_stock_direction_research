@@ -9,7 +9,7 @@ Two layers (same shape as test_notebook07_static_gate.py):
      §11.1 Tier Escalation Rule).
   B. notebook static gate (skipped until 08 colab notebook is generated):
      default RUN_08X/F/O_* and operator acknowledgements must be False,
-     AST parses, no forbidden imports, etc.
+     AST parses, package imports are exact-commit guarded, etc.
 """
 
 import ast
@@ -229,17 +229,18 @@ def test_notebook08_default_run_switches_are_inert():
         "RUN_08O_ENTRY_GATE",
         "RUN_08O_OFFICIAL_VALIDATION_READOUT",
         "RUN_08O_AGGREGATE_AND_WRITE_MANIFEST",
+        "RUN_PACKAGE_BACKED_STAGE",
     ):
         assert f"{switch} = False" in source, f"{switch} not defaulted to False"
         assert f"{switch} = True" not in source
     assert "BACKUP_NOTEBOOK08_TO_GOOGLE_DRIVE = False" in source
+    assert "PACKAGE_INSTALL_ENABLED = False" in source
 
 
 @notebook_required
 def test_notebook08_rejects_forbidden_imports_and_calls():
     source = joined_code_source()
     forbidden = [
-        "from intraday_research",
         "baseline_helpers",
         "drive.mount(",
         "train_test_split",
@@ -247,6 +248,47 @@ def test_notebook08_rejects_forbidden_imports_and_calls():
     ]
     found = [f for f in forbidden if f in source]
     assert not found, f"forbidden tokens present in N08 notebook: {found}"
+
+
+@notebook_required
+def test_notebook08_package_import_requires_exact_commit_install_guard():
+    source = joined_code_source()
+    required = [
+        'PACKAGE_REPO_URL = "https://github.com/zkc768/intraday_stock_direction_research.git"',
+        'PACKAGE_GIT_COMMIT = "0000000000000000000000000000000000000000"',
+        'PACKAGE_INSTALL_ENABLED = False',
+        'RUN_PACKAGE_BACKED_STAGE = False',
+        're.fullmatch(r"[0-9a-f]{40}", PACKAGE_GIT_COMMIT)',
+        'PACKAGE_GIT_COMMIT == "0" * 40',
+        'f"git+{PACKAGE_REPO_URL}@{PACKAGE_GIT_COMMIT}"',
+        'if RUN_PACKAGE_BACKED_STAGE:',
+        'if not PACKAGE_INSTALL_ENABLED:',
+        'from intraday_research.stages.deep_sequence_exploration import',
+    ]
+    missing = [needle for needle in required if needle not in source]
+    assert not missing, f"missing package-boundary guard strings: {missing}"
+
+    assert source.index("if RUN_PACKAGE_BACKED_STAGE:") < source.index(
+        "from intraday_research.stages.deep_sequence_exploration import"
+    )
+    assert source.index("PACKAGE_INSTALL_ENABLED = False") < source.index(
+        "from intraday_research.stages.deep_sequence_exploration import"
+    )
+
+
+@notebook_required
+def test_notebook08_rejects_floating_package_installs():
+    source = joined_code_source()
+    floating_tokens = [
+        "@main",
+        "@master",
+        "@HEAD",
+        'PACKAGE_GIT_COMMIT = "main"',
+        'PACKAGE_GIT_COMMIT = "master"',
+        "pip install intraday_research",
+    ]
+    found = [token for token in floating_tokens if token in source]
+    assert not found, f"floating package install token(s) present: {found}"
 
 
 @notebook_required

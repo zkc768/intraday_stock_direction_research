@@ -91,6 +91,7 @@ from __future__ import annotations
 import hashlib
 import json
 import math
+import re
 import subprocess
 import sys
 from datetime import datetime, timezone
@@ -137,6 +138,15 @@ RUN_08F_WRITE_FREEZE_RECORD = False
 RUN_08O_ENTRY_GATE = False
 RUN_08O_OFFICIAL_VALIDATION_READOUT = False
 RUN_08O_AGGREGATE_AND_WRITE_MANIFEST = False
+
+RUN_PACKAGE_BACKED_STAGE = False
+PACKAGE_INSTALL_ENABLED = False
+PACKAGE_REPO_URL = "https://github.com/zkc768/intraday_stock_direction_research.git"
+PACKAGE_GIT_COMMIT = "0000000000000000000000000000000000000000"
+PACKAGE_STAGE_NAME = "deep_sequence_exploration"
+PACKAGE_OFFICIAL_VALIDATION_PREDICTIONS_CSV = (
+    OUTPUT_DIR / "official_validation_predictions.csv"
+)
 
 BACKUP_NOTEBOOK08_TO_GOOGLE_DRIVE = False
 DRIVE_BACKUP_FOLDER_ID = ""
@@ -229,6 +239,8 @@ OUTPUT_FILES = {
     "08o_decision_record": OUTPUT_DIR / "08o_decision_record.json",
     "08o_run_manifest": OUTPUT_DIR / "08o_run_manifest.json",
     # Misc
+    "package_stage_invocation_manifest": OUTPUT_DIR
+    / "notebook08_package_stage_invocation_manifest.json",
     "drive_backup_manifest": OUTPUT_DIR / "notebook08_drive_backup_manifest.json",
 }
 
@@ -495,6 +507,108 @@ def make_trial_row(*, trial_id, candidate_family, candidate_id, config_hash,
         "official_validation_used": False,
         "holdout_test_authorized": False,
     }
+'''
+
+
+# ===========================================================================
+# Optional exact-commit package boundary.
+# ===========================================================================
+
+CELL_PACKAGE_INSTALL = r'''
+if PACKAGE_INSTALL_ENABLED:
+    if not re.fullmatch(r"[0-9a-f]{40}", PACKAGE_GIT_COMMIT):
+        raise ValueError(
+            "PACKAGE_GIT_COMMIT must be a 40-character lowercase hex commit"
+        )
+    if PACKAGE_GIT_COMMIT == "0" * 40:
+        raise ValueError(
+            "PACKAGE_GIT_COMMIT is still the inert placeholder; replace it "
+            "with the exact commit before enabling package install"
+        )
+    if PACKAGE_REPO_URL.endswith("/"):
+        raise ValueError("PACKAGE_REPO_URL must not end with a slash")
+    subprocess.check_call(
+        [
+            sys.executable,
+            "-m",
+            "pip",
+            "install",
+            f"git+{PACKAGE_REPO_URL}@{PACKAGE_GIT_COMMIT}",
+        ]
+    )
+else:
+    print("[package] PACKAGE_INSTALL_ENABLED = False (no install)")
+'''
+
+
+CELL_PACKAGE_BACKED_STAGE = r'''
+if RUN_PACKAGE_BACKED_STAGE:
+    if not PACKAGE_INSTALL_ENABLED:
+        raise ValueError(
+            "RUN_PACKAGE_BACKED_STAGE requires PACKAGE_INSTALL_ENABLED=True"
+        )
+    if PACKAGE_GIT_COMMIT == "0" * 40:
+        raise ValueError(
+            "RUN_PACKAGE_BACKED_STAGE requires a real exact git commit pin"
+        )
+
+    from intraday_research.stages.deep_sequence_exploration import (
+        run_stage as run_deep_sequence_exploration_stage,
+    )
+
+    package_run_switches = {
+        name: value
+        for name, value in RUN_SWITCHES.items()
+        if name.startswith("RUN_08")
+    }
+    package_config = {
+        "stage_name": PACKAGE_STAGE_NAME,
+        "validation_scope": NOTEBOOK08_SCOPE,
+        "holdout_test_contact": False,
+        "run_switches": package_run_switches,
+        "outputs": {"results_dir": str(OUTPUT_DIR)},
+        "inputs": {
+            "official_validation_predictions_csv": str(
+                PACKAGE_OFFICIAL_VALIDATION_PREDICTIONS_CSV
+            ),
+            "08o_decision_record": str(OUTPUT_FILES["08o_decision_record"]),
+            "08f_candidate_freeze_record": str(
+                OUTPUT_FILES["08f_candidate_freeze_record_json"]
+            ),
+            "validation_budget_ledger": str(PROJECT_VALIDATION_BUDGET_LEDGER_PATH),
+        },
+        "policy": {
+            "validation_budget_ledger": {
+                "path": str(PROJECT_VALIDATION_BUDGET_LEDGER_PATH)
+            },
+            "official_validation": {
+                "expected_tickers": ["CSCO", "JPM", "KO", "MSFT", "WMT"],
+                "holdout_test_contact": False,
+            },
+            "package_install": {
+                "repo_url": PACKAGE_REPO_URL,
+                "git_commit": PACKAGE_GIT_COMMIT,
+            },
+        },
+        "constants": PRE_REGISTRATION_CONSTANTS,
+    }
+    run_deep_sequence_exploration_stage(package_config, output_dir=OUTPUT_DIR)
+    package_invocation_manifest = {
+        "stage_name": PACKAGE_STAGE_NAME,
+        "package_repo_url": PACKAGE_REPO_URL,
+        "package_git_commit": PACKAGE_GIT_COMMIT,
+        "run_switches": package_run_switches,
+        "validation_scope": NOTEBOOK08_SCOPE,
+        "holdout_test_contact": False,
+        "invocation_status": "completed",
+        "written_at_utc": utc_now_iso(),
+    }
+    write_json(
+        OUTPUT_FILES["package_stage_invocation_manifest"],
+        package_invocation_manifest,
+    )
+else:
+    print("[package] RUN_PACKAGE_BACKED_STAGE = False (no package stage invocation)")
 '''
 
 
@@ -1596,6 +1710,7 @@ def validate_notebook(nb: nbformat.NotebookNode) -> None:
         "RUN_08O_ENTRY_GATE",
         "RUN_08O_OFFICIAL_VALIDATION_READOUT",
         "RUN_08O_AGGREGATE_AND_WRITE_MANIFEST",
+        "RUN_PACKAGE_BACKED_STAGE",
     )
     for switch in required_switches:
         if f"{switch} = False" not in source:
@@ -1608,6 +1723,27 @@ def validate_notebook(nb: nbformat.NotebookNode) -> None:
             )
     if "BACKUP_NOTEBOOK08_TO_GOOGLE_DRIVE = False" not in source:
         raise AssertionError("BACKUP_NOTEBOOK08_TO_GOOGLE_DRIVE = False missing")
+    if "PACKAGE_INSTALL_ENABLED = False" not in source:
+        raise AssertionError("PACKAGE_INSTALL_ENABLED = False missing")
+    required_package_boundary = (
+        "PACKAGE_GIT_COMMIT = \"0000000000000000000000000000000000000000\"",
+        "re.fullmatch(r\"[0-9a-f]{40}\", PACKAGE_GIT_COMMIT)",
+        "PACKAGE_GIT_COMMIT == \"0\" * 40",
+        "f\"git+{PACKAGE_REPO_URL}@{PACKAGE_GIT_COMMIT}\"",
+        "if RUN_PACKAGE_BACKED_STAGE:",
+        "if not PACKAGE_INSTALL_ENABLED:",
+        "from intraday_research.stages.deep_sequence_exploration import",
+        "run_deep_sequence_exploration_stage(package_config, output_dir=OUTPUT_DIR)",
+    )
+    for needle in required_package_boundary:
+        if needle not in source:
+            raise AssertionError(
+                f"required package boundary source string missing: {needle}"
+            )
+    if source.index("if RUN_PACKAGE_BACKED_STAGE:") > source.index(
+        "from intraday_research.stages.deep_sequence_exploration import"
+    ):
+        raise AssertionError("package import appears before RUN_PACKAGE_BACKED_STAGE")
     required_filenames = (
         "08x_search_space.json",
         "08x_trial_ledger.csv",
@@ -1626,6 +1762,7 @@ def validate_notebook(nb: nbformat.NotebookNode) -> None:
         "08o_failure_rows.csv",
         "08o_decision_record.json",
         "08o_run_manifest.json",
+        "notebook08_package_stage_invocation_manifest.json",
         "notebook07_validation_budget_ledger.csv",
     )
     for needle in required_filenames:
@@ -1634,7 +1771,6 @@ def validate_notebook(nb: nbformat.NotebookNode) -> None:
                 f"required notebook source string missing: {needle}"
             )
     forbidden = (
-        "from intraday_research",
         "baseline_helpers",
         "drive.mount(",
         "train_test_split",
@@ -1643,6 +1779,11 @@ def validate_notebook(nb: nbformat.NotebookNode) -> None:
         "select_on_official_validation",
         "official_val_best_picked",
         "__file__",
+        "@main",
+        "@master",
+        "@HEAD",
+        "PACKAGE_GIT_COMMIT = \"main\"",
+        "PACKAGE_GIT_COMMIT = \"master\"",
     )
     for needle in forbidden:
         if needle in source:
@@ -1666,8 +1807,9 @@ def build_notebook() -> nbformat.NotebookNode:
             "freezes architecture, loss, HPO, seeds, metrics, and wording rules "
             "before 08O; 08O reads official validation exactly once and never "
             "touches holdout/test.\n\n"
-            "All `RUN_08X_*`, `RUN_08F_*`, `RUN_08O_*`, and "
-            "`BACKUP_NOTEBOOK08_TO_GOOGLE_DRIVE` switches default to `False`. "
+            "All `RUN_08X_*`, `RUN_08F_*`, `RUN_08O_*`, "
+            "`RUN_PACKAGE_BACKED_STAGE`, and `BACKUP_NOTEBOOK08_TO_GOOGLE_DRIVE` "
+            "switches default to `False`. "
             "MVP: NO family is trained end-to-end inside this notebook. "
             "`last_step_lightgbm_control` emits a "
             "`fit_status=\"pending_last_step_lightgbm\"` row that the "
@@ -1690,11 +1832,19 @@ def build_notebook() -> nbformat.NotebookNode:
         new_code_cell(contract_source.strip()),
         new_markdown_cell(
             "## Config And Run Switches\n\nScope, output dir, 13 RUN_08X_*/F_*/O_* "
-            "switches (all default `False`), operator acknowledgements, locked "
-            "Stage 0 candidate, design-doc + operator-readout SHA pins, and "
-            "output file paths."
+            "research switches, the optional package-backed stage boundary "
+            "(all default `False`), operator acknowledgements, locked Stage 0 "
+            "candidate, design-doc + operator-readout SHA pins, and output "
+            "file paths."
         ),
         new_code_cell(CONFIG_SOURCE.strip()),
+        new_markdown_cell(
+            "## Optional Package Install Boundary\n\nDefault inert. Package "
+            "install is allowed only after the operator replaces the placeholder "
+            "`PACKAGE_GIT_COMMIT` with an exact 40-hex commit and explicitly "
+            "enables `PACKAGE_INSTALL_ENABLED`."
+        ),
+        new_code_cell(CELL_PACKAGE_INSTALL.strip()),
         new_markdown_cell(
             "## Runtime Helpers\n\nCanonical JSON/CSV writers, sha256 / env / git "
             "helpers, ledger append-before-read guard, `z_in_tier` z-score, "
@@ -1702,6 +1852,14 @@ def build_notebook() -> nbformat.NotebookNode:
             "runtime hasher per §10.1."
         ),
         new_code_cell(RUNTIME_HELPERS_SOURCE.strip()),
+        new_markdown_cell(
+            "## Optional Package-Backed Stage Invocation\n\nDefault inert. "
+            "When enabled after exact-commit package install, invokes "
+            "`intraday_research.stages.deep_sequence_exploration.run_stage` "
+            "with the same research switches and records a package invocation "
+            "manifest. Inline notebook cells remain available for review."
+        ),
+        new_code_cell(CELL_PACKAGE_BACKED_STAGE.strip()),
         new_markdown_cell(
             "## 08X - Schema Smoke\n\nVerifies the output directory and the "
             "project-level validation-budget ledger path. No model fits."

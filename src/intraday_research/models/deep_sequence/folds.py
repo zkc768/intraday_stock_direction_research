@@ -159,6 +159,95 @@ def rolling_origin_folds(
         yield train_idx, val_idx
 
 
+def _per_ticker_positions(timestamps: np.ndarray, ticker_ids: np.ndarray) -> dict:
+    """Global positional indices grouped by ticker, each chronologically sorted.
+
+    Shared by the purged / embargoed interior-block builders (rolling_origin
+    builds its own inline). Ticker iteration order is deterministic (np.unique
+    is sorted).
+    """
+    timestamps = np.asarray(timestamps)
+    ticker_ids = np.asarray(ticker_ids)
+    if timestamps.ndim != 1 or ticker_ids.ndim != 1:
+        raise ValueError(
+            "timestamps and ticker_ids must be 1-D arrays; got shapes "
+            f"{timestamps.shape}, {ticker_ids.shape}."
+        )
+    if timestamps.shape != ticker_ids.shape:
+        raise ValueError(
+            "timestamps and ticker_ids must have the same length; got "
+            f"{timestamps.shape} and {ticker_ids.shape}."
+        )
+    positions: dict = {}
+    for ticker in np.unique(ticker_ids):
+        mask = ticker_ids == ticker
+        ticker_global = np.where(mask)[0]
+        order = np.argsort(timestamps[ticker_global], kind="stable")
+        key = ticker.item() if hasattr(ticker, "item") else ticker
+        positions[key] = ticker_global[order].astype(np.int64, copy=False)
+    return positions
+
+
+def _interior_block_kfold(
+    ticker_positions: dict, *, n_folds: int, gap: int, builder_name: str
+) -> Iterator[tuple[np.ndarray, np.ndarray]]:
+    """Interior-block K-fold with a SYMMETRIC exclusion gap on both sides of each
+    validation block.
+
+    Per ticker the chronological positions are tiled into ``n_folds`` contiguous
+    rank blocks (``np.array_split``; earlier blocks take the remainder). For each
+    fold, validation = block ``i`` ``[a, b)`` and the half-open interval
+    ``[a - gap, b + gap)`` is excluded from train. With ``gap = label_horizon_k``
+    this is the López de Prado purge (removes train rows whose label
+    ``[t, t+k]`` overlaps the validation labels ``[a, b+k-1]`` on EITHER side);
+    ``embargoed`` passes ``gap = label_horizon_k + embargo_size``.
+
+    Raises ``ValueError`` if any ticker has fewer than ``n_folds`` samples, or if
+    any ticker x fold yields an empty validation or train array after exclusion
+    (checked by simulation, so fold 0 / the last fold / large gaps / uneven
+    blocks all fail loud rather than silently producing an empty slice).
+    """
+    blocks_by_ticker: dict = {}
+    for ticker, positions in ticker_positions.items():
+        m = len(positions)
+        if m < n_folds:
+            raise ValueError(
+                f"{builder_name}: ticker {ticker!r} has {m} samples; needs at "
+                f"least n_folds={n_folds} for one validation block per fold."
+            )
+        blocks_by_ticker[ticker] = np.array_split(np.arange(m, dtype=np.int64), n_folds)
+
+    # Simulate every ticker x fold; reject any empty train/val after exclusion.
+    for ticker, positions in ticker_positions.items():
+        m = len(positions)
+        for fold_i, block in enumerate(blocks_by_ticker[ticker]):
+            a = int(block[0])
+            b = int(block[-1]) + 1
+            lo = max(0, a - gap)
+            hi = min(m, b + gap)
+            if (b - a) < 1 or (lo + (m - hi)) < 1:
+                empty = "val" if (b - a) < 1 else "train"
+                raise ValueError(
+                    f"{builder_name}: ticker {ticker!r} fold {fold_i} yields an "
+                    f"empty {empty} after the symmetric gap={gap} exclusion "
+                    f"(m={m}, n_folds={n_folds}); not enough samples."
+                )
+
+    for fold_i in range(n_folds):
+        train_chunks: list[np.ndarray] = []
+        val_chunks: list[np.ndarray] = []
+        for ticker, positions in ticker_positions.items():
+            m = len(positions)
+            block = blocks_by_ticker[ticker][fold_i]
+            a = int(block[0])
+            b = int(block[-1]) + 1
+            lo = max(0, a - gap)
+            hi = min(m, b + gap)
+            train_chunks.append(np.concatenate([positions[:lo], positions[hi:]]))
+            val_chunks.append(positions[a:b])
+        yield np.sort(np.concatenate(train_chunks)), np.sort(np.concatenate(val_chunks))
+
+
 def purged_time_series_folds(
     timestamps: np.ndarray,
     ticker_ids: np.ndarray,
@@ -166,13 +255,43 @@ def purged_time_series_folds(
     n_folds: int,
     label_horizon_k: int,
 ) -> Iterator[tuple[np.ndarray, np.ndarray]]:
-    """Section 8.2 ``purged_time_series_folds`` scaffold.
+    """Section 8.2 ``purged_time_series_folds`` — interior-block K-fold (train-
+    inner exploration) with a symmetric label-horizon purge.
 
-    Drops train-inner-fit rows whose label horizon overlaps the
-    train-inner-validation interval.
+    Per ticker, positions are tiled into ``n_folds`` contiguous chronological
+    blocks; each block is the inner-validation slice of one fold, and train is the
+    other blocks MINUS the symmetric purge ``[a - k, b + k)`` around the
+    validation block ``[a, b)``. This removes every train row whose label
+    ``[t, t+k]`` overlaps the validation labels ``[a, b+k-1]`` — both the
+    train-BEFORE rows whose forward label reaches the block and the train-AFTER
+    rows that fall inside a validation row's forward label horizon (AGENTS.md
+    §4.1.4). Folds are pooled across tickers; indices are ``np.int64`` positional,
+    sorted ascending.
+
+    Args:
+        timestamps: 1-D per-sample timestamps (any orderable dtype).
+        ticker_ids: 1-D per-sample ticker ids, aligned with ``timestamps``.
+        n_folds: number of interior validation blocks (>= 2 — an interior fold
+            needs at least one other block to train on).
+        label_horizon_k: label horizon length (>= 0); the symmetric purge width.
+
+    Yields:
+        ``(train_inner_fit_idx, train_inner_val_idx)`` for folds 0..n_folds-1.
+
+    Raises:
+        ValueError: shape mismatch, ``n_folds < 2``, negative ``label_horizon_k``,
+            or any ticker x fold with an empty train/val after the purge.
     """
-    raise NotImplementedError(
-        "purged_time_series_folds is a scaffold; N08 task #4 half 2."
+    if n_folds < 2:
+        raise ValueError(f"n_folds must be >= 2 for interior K-fold; got {n_folds}.")
+    if label_horizon_k < 0:
+        raise ValueError(f"label_horizon_k must be >= 0; got {label_horizon_k}.")
+    ticker_positions = _per_ticker_positions(timestamps, ticker_ids)
+    yield from _interior_block_kfold(
+        ticker_positions,
+        n_folds=n_folds,
+        gap=label_horizon_k,
+        builder_name="purged_time_series_folds",
     )
 
 
@@ -184,11 +303,34 @@ def embargoed_train_inner_folds(
     label_horizon_k: int,
     embargo_size: int,
 ) -> Iterator[tuple[np.ndarray, np.ndarray]]:
-    """Section 8.2 ``embargoed_train_inner_folds`` scaffold.
+    """Section 8.2 ``embargoed_train_inner_folds`` — purged interior-block K-fold
+    plus a symmetric embargo gap on both sides of each validation block.
 
-    Purged + an additional embargo gap on both sides of the inner-validation
-    block to remove temporal leakage from window overlap.
+    Identical to ``purged_time_series_folds`` but the excluded interval widens to
+    ``[a - (k + embargo_size), b + (k + embargo_size))``: the ``k`` symmetric
+    label-purge plus an ``embargo_size`` serial-correlation gap on each side.
+
+    Window-overlap note: this layer-1 builder has no ``window_size``, so it
+    guarantees only the label-horizon purge + the requested ``embargo_size`` band.
+    To ALSO exclude input-window overlap with the validation block, the caller
+    must size ``embargo_size`` so that ``label_horizon_k + embargo_size >=
+    window_size - 1`` (a window-construction invariant owned upstream per this
+    module's layer-2/3 responsibility split).
+
+    Raises:
+        ValueError: shape mismatch, ``n_folds < 2``, negative ``label_horizon_k``
+            or ``embargo_size``, or any ticker x fold with an empty train/val.
     """
-    raise NotImplementedError(
-        "embargoed_train_inner_folds is a scaffold; N08 task #4 half 2."
+    if n_folds < 2:
+        raise ValueError(f"n_folds must be >= 2 for interior K-fold; got {n_folds}.")
+    if label_horizon_k < 0:
+        raise ValueError(f"label_horizon_k must be >= 0; got {label_horizon_k}.")
+    if embargo_size < 0:
+        raise ValueError(f"embargo_size must be >= 0; got {embargo_size}.")
+    ticker_positions = _per_ticker_positions(timestamps, ticker_ids)
+    yield from _interior_block_kfold(
+        ticker_positions,
+        n_folds=n_folds,
+        gap=label_horizon_k + embargo_size,
+        builder_name="embargoed_train_inner_folds",
     )

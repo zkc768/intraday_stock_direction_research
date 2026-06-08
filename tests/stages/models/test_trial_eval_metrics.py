@@ -150,3 +150,13 @@ def test_reject_object_array_numpy_float_nan_ticker():
     tk = np.array(["A", np.float32("nan"), "A", "A"], dtype=object)
     with pytest.raises(ValueError, match="missing"):
         compute_trial_metrics(np.array([0, 1, 0, 1]), np.array([0, 1, 0, 1]), tk)
+
+
+def test_reject_pandas_na_ticker():
+    # pd.NA must be caught by the pandas.isna path (Codex follow-up P3), not blow
+    # up later in np.unique with a non-builder TypeError.
+    import pandas as pd
+
+    tk = np.array(["A", pd.NA, "A", "A"], dtype=object)
+    with pytest.raises(ValueError, match="missing"):
+        compute_trial_metrics(np.array([0, 1, 0, 1]), np.array([0, 1, 0, 1]), tk)

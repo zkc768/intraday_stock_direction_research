@@ -56,13 +56,22 @@ corrupt the §9.2 seed-stability score. So the dummy is computed
 **ANALYTICALLY/DETERMINISTICALLY** (no seed):
 
 Using the SAME-ROW class balance of `y_true` (`n = len`, `n_c = count(y_true==c)`,
-`q_c = n_c / n`), the expected macro-F1 of a stratified null (predicts class `c`
-with probability `q_c`) is, per class,
-`F1_null_c = 2 * n_c * q_c / (n_c + n * q_c)` (= `q_c`), so
+`q_c = n_c / n`), it is the macro-F1 of the EXPECTED confusion matrix of a
+stratified guesser (predicts class `c` at rate `q_c`) — a deterministic
+PLUG-IN / class-balance null, i.e. `F1(E[confusion])`, NOT `E[macro-F1]`. Per
+class `F1_null_c = 2 * n_c * q_c / (n_c + n * q_c)` (= `q_c`), so
 `stratified_dummy_macro_f1_same_rows = mean(F1_null_0, F1_null_1)` — which equals
 **0.5** whenever both classes are present (the body requires that, §4), giving
 `delta_macro_f1_vs_dummy = macro_f1 - 0.5`. The module computes the per-class
-formula explicitly (transparent + robust) rather than hard-coding 0.5.
+formula explicitly (transparent) rather than hard-coding 0.5.
+
+**Naming caveat (Codex follow-up):** this is the deterministic plug-in
+(`F1(E[confusion]) = 0.5`), NOT the finite-sample expected macro-F1 of a seeded
+`DummyClassifier(strategy="stratified")` draw (which is lower for small folds,
+e.g. ~0.4167 at `n=2`). The plug-in is chosen DELIBERATELY for a
+fold-size-independent, noise-free selection delta; the docstring/spec name it as
+a "deterministic class-balance plug-in null", not a "stratified-dummy
+expectation".
 
 **Same-row (val) class balance** is the integrity-safe null (Codex P1-confirmed):
 a train prior can be artificially weak under train-inner class-balance drift and

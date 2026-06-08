@@ -17,8 +17,6 @@ nothing here reads or scores official validation / holdout.
 
 from __future__ import annotations
 
-import numbers
-
 import numpy as np
 
 # The exact set of metric columns this module produces (subset of the contract's
@@ -36,18 +34,13 @@ METRIC_COLUMNS: tuple[str, ...] = (
 
 
 def _ticker_ids_have_missing(ticker_ids: np.ndarray) -> bool:
-    """True if ``ticker_ids`` contains None / NaN (so ticker_max_share stays
-    auditable). int / str dtypes cannot carry a missing marker."""
-    if ticker_ids.dtype == object:
-        # numbers.Real (not just Python float) so an object-array np.float32/64
-        # NaN is caught too (Codex P2); np.isnan is False for non-NaN reals.
-        return any(
-            t is None or (isinstance(t, numbers.Real) and np.isnan(t))
-            for t in ticker_ids
-        )
-    if np.issubdtype(ticker_ids.dtype, np.floating):
-        return bool(np.isnan(ticker_ids).any())
-    return False
+    """True if ``ticker_ids`` contains any missing marker, so ``ticker_max_share``
+    stays auditable. Uses ``pandas.isna`` (deferred) to catch None, ``np.nan``
+    (Python float AND object-array ``np.float32/64`` NaN), ``pd.NA`` and
+    ``pd.NaT`` uniformly across dtypes."""
+    import pandas as pd
+
+    return bool(np.asarray(pd.isna(ticker_ids)).any())
 
 
 def _validate(
@@ -89,10 +82,17 @@ def _validate(
 
 
 def _stratified_null_macro_f1(y_true: np.ndarray) -> float:
-    """Deterministic expected macro-F1 of a same-row stratified null (predicts
-    class ``c`` with probability ``q_c = n_c / n``):
-    ``F1_null_c = 2*n_c*q_c / (n_c + n*q_c)`` (= ``q_c``), averaged over classes
-    (= 0.5 whenever both classes are present, which the caller requires)."""
+    """Deterministic class-balance (PLUG-IN) stratified null: the macro-F1 of the
+    EXPECTED confusion matrix of a stratified guesser (predicts class ``c`` at
+    rate ``q_c = n_c / n``), i.e. ``F1(E[confusion])`` not ``E[macro-F1]``.
+
+    Per class ``F1_null_c = 2*n_c*q_c / (n_c + n*q_c)`` (= ``q_c``), averaged
+    over classes = **0.5 whenever both classes are present** (the caller requires
+    that). It is used DELIBERATELY (Codex review): a deterministic, fold-size-
+    independent, noise-free baseline so ``delta_macro_f1_vs_dummy`` is a stable
+    selection signal under the §9.1 LCB margin. This is NOT the finite-sample
+    expected macro-F1 of a seeded ``DummyClassifier(strategy="stratified")`` draw,
+    which is lower for small folds (e.g. ~0.4167 at ``n=2``)."""
     n = y_true.shape[0]
     f1_null = []
     for c in (0, 1):

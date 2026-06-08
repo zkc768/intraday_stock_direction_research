@@ -79,12 +79,16 @@ Per-param (exact-type incl. bool rejection — Codex note):
 - **Reduce-to-CE** equivalences (§2): focal γ=0, balanced-softmax uniform prior,
   weighted balanced prior, CB equal samples all `== cross_entropy_loss` (allclose).
 - **Direction** checks: focal with γ>0 ≤ CE on confident-correct samples
-  (down-weights easy examples); weighted/CB up-weight the minority class
-  (loss rises when the minority class is mispredicted vs uniform).
-- **Stability**: large-magnitude logits (e.g. ±50) do not overflow/NaN.
-- **Guards**: non-(n,2) logits, non-finite logits, targets out of {0,1}, prior
-  not summing to 1 / containing 0, negative gamma, beta out of (0,1),
-  samples_per_class non-positive, weight wrong shape — each `ValueError`.
+  (down-weights easy examples); weighted/CB up-weight the minority class — assert
+  on a **mixed-class batch** where the minority-class CE exceeds the majority's so
+  the weighting raises the loss vs uniform (Codex P2: single-class batches cancel
+  the weights), and/or assert the derived class weights directly.
+- **Stability**: large-magnitude logits (e.g. ±50) do not overflow/NaN; CB with
+  `beta=0.9999` and large `samples_per_class` stays finite (the `expm1/log1p` path).
+- **Guards**: empty `(0,2)` logits (Codex P1), non-(n,2) logits, non-finite
+  logits, bool/`{0,1}`-violating targets, prior not summing to 1 / containing 0,
+  negative gamma, beta out of (0,1), samples_per_class non-positive or bool,
+  weight wrong shape, bool scalar params — each `ValueError`.
 - **Import**: the existing `test_losses_module_exports_five_named_losses` stays
   green (names unchanged).
 
@@ -94,14 +98,25 @@ reads these for diagnostic loss columns; a future training-loss-selection piece
 (if predeclared per §7.5) would wire differentiable torch equivalents into the
 models' `_train` — NOT part of this piece.
 
-## 7. Open Decisions for Review
-1. **numpy→float DIAGNOSTIC vs torch differentiable** — the scaffold signature is
-   `np.ndarray → float`, so I implement diagnostic value-losses. Confirm this is
-   the intended role (and that training-loss selection is a separate future
-   piece), vs. wanting torch/differentiable losses now.
-2. **Convention choices:** focal α as `α_t = alpha if y==1 else 1-alpha`
-   (Lin et al. binary convention); CB/weighted use scale-invariant weighted-mean
-   (skip sum-to-num_classes normalization since it doesn't change the value);
-   balanced-softmax = CE on log-prior-shifted logits. Confirm these match intent.
-3. **Reductions:** weighted losses use `Σ w·ce / Σ w` (PyTorch mean convention);
-   focal uses plain `mean`. Confirm (vs. dividing focal by `Σ α_t`).
+## 7. Open Decisions for Review (all Codex-resolved)
+1. ~~numpy→float DIAGNOSTIC vs torch differentiable~~ — **resolved**: Codex
+   confirmed diagnostic numpy value-losses are correct for the fixed scaffold;
+   torch differentiable training-loss selection is a separate future 08X piece.
+2. ~~Convention choices~~ — **resolved**: Codex confirmed all formulas/conventions
+   correct (focal α binary convention, CB/weighted scale-invariant weighted-mean,
+   balanced-softmax = CE on log-prior-ADDED logits).
+3. ~~Reductions~~ — **resolved**: `Σ w·ce / Σ w` for weighted, plain `mean` for
+   focal — Codex confirmed (PyTorch mean convention).
+
+## 8. Codex Design Review — absorbed (2026-06-07, gpt-5.5:high, 232s)
+- **P1 (empty-batch guard):** §3 `_validate_logits_targets` now rejects `n == 0`
+  (+ guard test §5).
+- **P2 (CB stability):** §2 computes `E_c` via `-expm1(n_c·log1p(beta-1))/(1-beta)`
+  (no `1-beta**n_c` cancellation near `beta→1`).
+- **P2 (direction test):** §5 uses a mixed-class batch (single-class batches cancel
+  the weights).
+- **Codex notes absorbed:** targets must be integer-but-not-bool; scalar params
+  exact-type incl. bool rejection.
+- **Confirmed sound:** diagnostic role, every formula, the reduce-to-CE
+  equivalences, focal `0**0==1.0` safety, the AGENTS §4.1 caller-provides-priors
+  boundary.

@@ -297,7 +297,7 @@ def test_schema_smoke_and_08o_readout_must_be_separate_invocations(tmp_path):
         }
     }
 
-    with pytest.raises(ValueError, match="separate invocations"):
+    with pytest.raises(ValueError, match="per invocation"):
         m.run_stage(config, output_dir=tmp_path)
 
 

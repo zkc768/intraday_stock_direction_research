@@ -191,6 +191,29 @@ FAILURE_TYPES = (
 )
 
 
+# ---------- §8.2 Fold Results -----------------------------------------------
+# Schema for 08x_fold_results.csv. The header-only schema-smoke writer and the
+# real BUILD_TRAIN_INNER_FOLDS writer (stages/deep_sequence_fold_build.py) share
+# this schema; the ordered column tuple lives in deep_sequence_schema_smoke.
+# Added 2026-06-08 (#5F-2) with the contract owner's sign-off.
+
+FOLD_SCHEMES = (
+    "rolling_origin_folds",
+    "purged_time_series_folds",
+    "embargoed_train_inner_folds",
+)
+
+FOLD_RESULTS_REQUIRED_COLUMNS = {
+    "fold_id",
+    "fold_scheme",
+    "split_index",
+    "train_inner_fit_n",
+    "train_inner_validation_n",
+    "purge_gap_k",
+    "embargo_gap_k",
+}
+
+
 # ---------- DMC Attestation (§9.1) ------------------------------------------
 
 REQUIRED_DMC_FIELDS = {
@@ -708,6 +731,70 @@ def validate_trial_ledger_frame(df: pd.DataFrame) -> None:
                 "08x_trial_ledger has failed rows with invalid failure_type: "
                 f"{sorted(bad_failure)} (allowed: {sorted(FAILURE_TYPES)})"
             )
+
+
+def validate_08x_fold_results_frame(
+    df: pd.DataFrame, *, require_non_empty: bool = False
+) -> None:
+    """§8.2 fold-results schema guard for ``08x_fold_results.csv``.
+
+    Validates only the SCHEMA (not fold-leakage correctness, which the layer-1
+    ``models/deep_sequence/folds.py`` builders own). The header-only schema-smoke
+    writer calls this with ``require_non_empty=False`` (the empty branch returns);
+    the real ``BUILD_TRAIN_INNER_FOLDS`` writer calls it with ``True``.
+
+    Checks: required columns present; ``fold_id`` unique non-empty strings;
+    ``fold_scheme`` in ``FOLD_SCHEMES``; ``split_index`` integer >= 0;
+    ``train_inner_fit_n`` / ``train_inner_validation_n`` integer > 0;
+    ``purge_gap_k`` / ``embargo_gap_k`` integer >= 0. Integer dtype is required
+    (a float / bool column is rejected, matching the project's exact-type axis
+    convention).
+
+    Raises ``AssertionError`` on any violation.
+    """
+    missing = FOLD_RESULTS_REQUIRED_COLUMNS - set(df.columns)
+    if missing:
+        raise AssertionError(f"08x_fold_results missing columns: {sorted(missing)}")
+    if df.empty:
+        if require_non_empty:
+            raise AssertionError(
+                "08x_fold_results is empty but require_non_empty=True"
+            )
+        return
+    if df["fold_id"].isna().any():
+        raise AssertionError("08x_fold_results has a null fold_id")
+    fold_id = df["fold_id"].astype(str).str.strip()
+    if fold_id.str.len().eq(0).any():
+        raise AssertionError("08x_fold_results has an empty/blank fold_id")
+    if fold_id.duplicated().any():
+        raise AssertionError("08x_fold_results has duplicate fold_id values")
+    bad_scheme = set(df["fold_scheme"].astype(str).unique()) - set(FOLD_SCHEMES)
+    if bad_scheme:
+        raise AssertionError(
+            f"08x_fold_results invalid fold_scheme: {sorted(bad_scheme)} "
+            f"(allowed: {sorted(FOLD_SCHEMES)})"
+        )
+    integer_columns = (
+        "split_index",
+        "train_inner_fit_n",
+        "train_inner_validation_n",
+        "purge_gap_k",
+        "embargo_gap_k",
+    )
+    for col in integer_columns:
+        if not pd.api.types.is_integer_dtype(df[col]):
+            raise AssertionError(
+                f"08x_fold_results column {col!r} must be integer dtype; "
+                f"got {df[col].dtype}"
+            )
+    if (df["split_index"] < 0).any():
+        raise AssertionError("08x_fold_results split_index must be >= 0")
+    for col in ("train_inner_fit_n", "train_inner_validation_n"):
+        if (df[col] <= 0).any():
+            raise AssertionError(f"08x_fold_results {col} must be > 0")
+    for col in ("purge_gap_k", "embargo_gap_k"):
+        if (df[col] < 0).any():
+            raise AssertionError(f"08x_fold_results {col} must be >= 0")
 
 
 def validate_08x_search_space(payload: dict) -> None:

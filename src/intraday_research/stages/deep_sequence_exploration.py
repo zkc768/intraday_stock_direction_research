@@ -56,6 +56,9 @@ from intraday_research.stages.deep_sequence_official_readout import (
     write_08o_readout_artifacts,
     write_08o_run_manifest,
 )
+from intraday_research.stages.deep_sequence_fold_build import (
+    run_build_train_inner_folds,
+)
 from intraday_research.stages.io_helpers import sha256_file
 from intraday_research.stages.validation_budget_ledger import ValidationBudgetLedger
 
@@ -67,13 +70,13 @@ REQUIRED_ARTIFACTS: tuple[str, ...] = (
 
 SCHEMA_SMOKE_SWITCH = "RUN_08X_SCHEMA_SMOKE"
 OFFICIAL_READOUT_SWITCH = "RUN_08O_OFFICIAL_VALIDATION_READOUT"
+BUILD_FOLDS_SWITCH = "RUN_08X_BUILD_TRAIN_INNER_FOLDS"
 # Explicit enumeration of the 13 non-smoke switches declared in
 # `configs/stages/deep_sequence_exploration.yaml`. Used by the parametrized
 # regression test to confirm each is rejected by name. The impl rejects ANY
 # truthy `RUN_*` / `BACKUP_*` switch that is not `SCHEMA_SMOKE_SWITCH`
 # (Codex impl review P1-1: forward-compat against future YAML additions).
 OTHER_SWITCHES: tuple[str, ...] = (
-    "RUN_08X_BUILD_TRAIN_INNER_FOLDS",
     "RUN_08X_SEARCH_SPACE_DRY_RUN",
     "RUN_08X_QUICK_SEARCH",
     "RUN_08X_MEDIUM_SEARCH",
@@ -113,7 +116,11 @@ def run_stage(
     # Codex impl review P1-1: prefix-based detection catches future
     # RUN_*/BACKUP_* switches that the YAML may grow but this slice does
     # not yet migrate. Only explicitly handled switches are positive cases.
-    handled_switches = {SCHEMA_SMOKE_SWITCH, OFFICIAL_READOUT_SWITCH}
+    handled_switches = {
+        SCHEMA_SMOKE_SWITCH,
+        OFFICIAL_READOUT_SWITCH,
+        BUILD_FOLDS_SWITCH,
+    }
     enabled_others = sorted(
         name for name, value in switches.items()
         if bool(value)
@@ -122,34 +129,38 @@ def run_stage(
     )
     if enabled_others:
         raise NotImplementedError(
-            f"Stage '{STAGE_NAME}' slice #5F-1 only implements "
-            f"{sorted(handled_switches)}; the following enabled switches are "
-            f"not yet migrated: {enabled_others}"
+            f"Stage '{STAGE_NAME}' only implements {sorted(handled_switches)}; "
+            f"the following enabled switches are not yet migrated: {enabled_others}"
         )
 
-    smoke_enabled = bool(switches.get(SCHEMA_SMOKE_SWITCH, False))
-    readout_enabled = bool(switches.get(OFFICIAL_READOUT_SWITCH, False))
-    if smoke_enabled and readout_enabled:
+    enabled_handled = sorted(
+        name for name in handled_switches if bool(switches.get(name, False))
+    )
+    if len(enabled_handled) > 1:
         raise ValueError(
-            f"{SCHEMA_SMOKE_SWITCH} and {OFFICIAL_READOUT_SWITCH} must run in "
-            "separate invocations"
+            f"only one of {sorted(handled_switches)} may run per invocation; "
+            f"got {enabled_handled}"
         )
-    if not smoke_enabled and not readout_enabled:
-        logger.info(
-            "stage %s: no run-switch enabled, exiting no-op", STAGE_NAME
-        )
+    if not enabled_handled:
+        logger.info("stage %s: no run-switch enabled, exiting no-op", STAGE_NAME)
         return
 
     out = resolve_output_dir(config, output_dir)
     out.mkdir(parents=True, exist_ok=True)
-    if readout_enabled:
+    active = enabled_handled[0]
+
+    if active == OFFICIAL_READOUT_SWITCH:
         _run_08o_official_readout(config, out)
+        return
+    if active == BUILD_FOLDS_SWITCH:
+        logger.info(
+            "stage %s: build-train-inner-folds writing to %s", STAGE_NAME, out
+        )
+        run_build_train_inner_folds(config, out)
         return
 
     logger.info("stage %s: schema-smoke writing artifacts to %s", STAGE_NAME, out)
-
     write_schema_smoke_artifacts(out)
-
     written = sorted(p.name for p in out.iterdir() if p.is_file())
     expected = sorted(OUTPUT_FILES_08X)
     missing = set(expected) - set(written)

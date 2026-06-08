@@ -1408,3 +1408,97 @@ def test_completeness_gate_returns_dict_shape(tmp_path: Path):
             "present", "non_empty", "schema_complete",
             "missing_columns", "row_count",
         }
+
+
+# --------------------------------------------------------------------------
+# §8.2 validate_08x_fold_results_frame (#5F-2)
+# --------------------------------------------------------------------------
+
+def _valid_fold_results_frame() -> pd.DataFrame:
+    return pd.DataFrame(
+        [
+            {
+                "fold_id": "rolling_origin_folds__0",
+                "fold_scheme": "rolling_origin_folds",
+                "split_index": 0,
+                "train_inner_fit_n": 5,
+                "train_inner_validation_n": 2,
+                "purge_gap_k": 1,
+                "embargo_gap_k": 0,
+            },
+            {
+                "fold_id": "rolling_origin_folds__1",
+                "fold_scheme": "rolling_origin_folds",
+                "split_index": 1,
+                "train_inner_fit_n": 7,
+                "train_inner_validation_n": 2,
+                "purge_gap_k": 1,
+                "embargo_gap_k": 0,
+            },
+        ]
+    )
+
+
+def test_validate_fold_results_happy():
+    c.validate_08x_fold_results_frame(
+        _valid_fold_results_frame(), require_non_empty=True
+    )
+
+
+def test_validate_fold_results_empty_ok_when_not_required():
+    empty = pd.DataFrame(columns=sorted(c.FOLD_RESULTS_REQUIRED_COLUMNS))
+    c.validate_08x_fold_results_frame(empty, require_non_empty=False)
+
+
+def test_validate_fold_results_empty_rejected_when_required():
+    empty = pd.DataFrame(columns=sorted(c.FOLD_RESULTS_REQUIRED_COLUMNS))
+    with pytest.raises(AssertionError, match="require_non_empty"):
+        c.validate_08x_fold_results_frame(empty, require_non_empty=True)
+
+
+def test_validate_fold_results_missing_column():
+    df = _valid_fold_results_frame().drop(columns=["purge_gap_k"])
+    with pytest.raises(AssertionError, match="missing columns"):
+        c.validate_08x_fold_results_frame(df)
+
+
+def test_validate_fold_results_bad_scheme():
+    df = _valid_fold_results_frame()
+    df.loc[0, "fold_scheme"] = "bogus_scheme"
+    with pytest.raises(AssertionError, match="fold_scheme"):
+        c.validate_08x_fold_results_frame(df)
+
+
+def test_validate_fold_results_duplicate_fold_id():
+    df = _valid_fold_results_frame()
+    df.loc[1, "fold_id"] = df.loc[0, "fold_id"]
+    with pytest.raises(AssertionError, match="duplicate fold_id"):
+        c.validate_08x_fold_results_frame(df)
+
+
+def test_validate_fold_results_negative_split_index():
+    df = _valid_fold_results_frame()
+    df.loc[0, "split_index"] = -1
+    with pytest.raises(AssertionError, match="split_index"):
+        c.validate_08x_fold_results_frame(df)
+
+
+def test_validate_fold_results_zero_count_rejected():
+    df = _valid_fold_results_frame()
+    df.loc[0, "train_inner_validation_n"] = 0
+    with pytest.raises(AssertionError, match="train_inner_validation_n"):
+        c.validate_08x_fold_results_frame(df)
+
+
+def test_validate_fold_results_float_dtype_rejected():
+    df = _valid_fold_results_frame()
+    df["split_index"] = df["split_index"].astype(float)
+    with pytest.raises(AssertionError, match="integer dtype"):
+        c.validate_08x_fold_results_frame(df)
+
+
+def test_validate_fold_results_null_fold_id_rejected():
+    df = _valid_fold_results_frame()
+    df.loc[0, "fold_id"] = None
+    with pytest.raises(AssertionError, match="null fold_id"):
+        c.validate_08x_fold_results_frame(df)

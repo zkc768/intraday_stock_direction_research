@@ -20,6 +20,7 @@ from intraday_research.contracts.deep_sequence_exploration import (
     OUTPUT_FILES_08X,
     REQUIRED_08X_RUN_MANIFEST_FIELDS,
     REQUIRED_TRIAL_LEDGER_COLUMNS,
+    validate_08x_fold_results_frame,
     validate_08x_run_manifest,
     validate_08x_search_space,
     validate_trial_ledger_frame,
@@ -177,9 +178,9 @@ def _write_trial_ledger_header(out: Path) -> None:
 
 
 def _write_fold_results_header(out: Path) -> None:
-    pd.DataFrame(columns=list(FOLD_RESULTS_COLUMNS)).to_csv(
-        out / "08x_fold_results.csv", index=False
-    )
+    df = pd.DataFrame(columns=list(FOLD_RESULTS_COLUMNS))
+    validate_08x_fold_results_frame(df, require_non_empty=False)
+    df.to_csv(out / "08x_fold_results.csv", index=False)
 
 
 def _write_seed_summary_header(out: Path) -> None:

@@ -214,6 +214,27 @@ FOLD_RESULTS_REQUIRED_COLUMNS = {
 }
 
 
+# ---------- §11.1 / §14.1 / §14.3 Per-Ticker Train-Inner Metrics ------------
+# Schema for 08x_per_ticker.csv (#5F-7). The ordered column tuple lives in
+# deep_sequence_schema_smoke (PER_TICKER_COLUMNS); the set + validator live here.
+# Added 2026-06-08 (#5F-7) with the contract owner's sign-off.
+
+PER_TICKER_REQUIRED_COLUMNS = {
+    "candidate_id",
+    "candidate_family",
+    "ticker",
+    "n_rows_total",
+    "n_trials_expected",
+    "n_trials_contributing",
+    "coverage_rate",
+    "macro_f1_mean",
+    "delta_macro_f1_vs_dummy_mean",
+    "positive_delta",
+    "coverage_status",
+}
+PER_TICKER_COVERAGE_STATUSES = ("ok", "insufficient")
+
+
 # ---------- DMC Attestation (§9.1) ------------------------------------------
 
 REQUIRED_DMC_FIELDS = {
@@ -388,6 +409,7 @@ OUTPUT_FILES_08X = (
     "08x_fold_results.csv",
     "08x_seed_summary.csv",
     "08x_failure_ledger.csv",
+    "08x_per_ticker.csv",
     "08x_candidate_compression_table.csv",
     "08x_run_manifest.json",
     "08x_environment_manifest.json",
@@ -795,6 +817,73 @@ def validate_08x_fold_results_frame(
     for col in ("purge_gap_k", "embargo_gap_k"):
         if (df[col] < 0).any():
             raise AssertionError(f"08x_fold_results {col} must be >= 0")
+
+
+def validate_08x_per_ticker_frame(
+    df: pd.DataFrame, *, require_non_empty: bool = False
+) -> None:
+    """§11.1 / §14.1 / §14.3 per-ticker train-inner schema guard for
+    ``08x_per_ticker.csv`` (#5F-7).
+
+    Validates SCHEMA only (not metric correctness): required columns present;
+    ``candidate_id`` / ``candidate_family`` / ``ticker`` non-null non-blank;
+    ``(candidate_id, ticker)`` pairs unique (the complete grid has one row per
+    candidate x expected-ticker); ``n_rows_total`` / ``n_trials_expected`` /
+    ``n_trials_contributing`` integer with ``n_trials_expected > 0`` and
+    ``0 <= n_trials_contributing <= n_trials_expected``; ``coverage_rate`` numeric in
+    ``[0, 1]``; ``positive_delta`` boolean; ``coverage_status`` in
+    ``PER_TICKER_COVERAGE_STATUSES``. The header-only writer passes
+    ``require_non_empty=False`` (empty branch returns); the real quick-search writer
+    passes ``True``. Raises ``AssertionError`` on any violation.
+    """
+    missing = PER_TICKER_REQUIRED_COLUMNS - set(df.columns)
+    if missing:
+        raise AssertionError(f"08x_per_ticker missing columns: {sorted(missing)}")
+    if df.empty:
+        if require_non_empty:
+            raise AssertionError("08x_per_ticker is empty but require_non_empty=True")
+        return
+    for col in ("candidate_id", "candidate_family", "ticker"):
+        if df[col].isna().any():
+            raise AssertionError(f"08x_per_ticker has a null {col}")
+        if df[col].astype(str).str.strip().str.len().eq(0).any():
+            raise AssertionError(f"08x_per_ticker has an empty/blank {col}")
+    if df.duplicated(subset=["candidate_id", "ticker"]).any():
+        raise AssertionError(
+            "08x_per_ticker has duplicate (candidate_id, ticker) rows"
+        )
+    integer_columns = ("n_rows_total", "n_trials_expected", "n_trials_contributing")
+    for col in integer_columns:
+        if not pd.api.types.is_integer_dtype(df[col]):
+            raise AssertionError(
+                f"08x_per_ticker column {col!r} must be integer dtype; got {df[col].dtype}"
+            )
+    if (df["n_trials_expected"] <= 0).any():
+        raise AssertionError("08x_per_ticker n_trials_expected must be > 0")
+    if (df["n_trials_contributing"] < 0).any():
+        raise AssertionError("08x_per_ticker n_trials_contributing must be >= 0")
+    if (df["n_trials_contributing"] > df["n_trials_expected"]).any():
+        raise AssertionError(
+            "08x_per_ticker n_trials_contributing must be <= n_trials_expected"
+        )
+    if (df["n_rows_total"] < 0).any():
+        raise AssertionError("08x_per_ticker n_rows_total must be >= 0")
+    coverage = pd.to_numeric(df["coverage_rate"], errors="coerce")
+    if coverage.isna().any() or (coverage < 0).any() or (coverage > 1).any():
+        raise AssertionError("08x_per_ticker coverage_rate must be numeric in [0, 1]")
+    if not pd.api.types.is_bool_dtype(df["positive_delta"]):
+        raise AssertionError(
+            "08x_per_ticker positive_delta must be boolean dtype; got "
+            f"{df['positive_delta'].dtype}"
+        )
+    bad_status = set(df["coverage_status"].astype(str).unique()) - set(
+        PER_TICKER_COVERAGE_STATUSES
+    )
+    if bad_status:
+        raise AssertionError(
+            f"08x_per_ticker coverage_status has invalid values: {sorted(bad_status)} "
+            f"(allowed: {sorted(PER_TICKER_COVERAGE_STATUSES)})"
+        )
 
 
 def validate_08x_search_space(payload: dict) -> None:

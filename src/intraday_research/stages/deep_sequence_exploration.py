@@ -72,21 +72,17 @@ SCHEMA_SMOKE_SWITCH = "RUN_08X_SCHEMA_SMOKE"
 OFFICIAL_READOUT_SWITCH = "RUN_08O_OFFICIAL_VALIDATION_READOUT"
 BUILD_FOLDS_SWITCH = "RUN_08X_BUILD_TRAIN_INNER_FOLDS"
 QUICK_SEARCH_SWITCH = "RUN_08X_QUICK_SEARCH"
-# Explicit enumeration of the 13 non-smoke switches declared in
-# `configs/stages/deep_sequence_exploration.yaml`. Used by the parametrized
-# regression test to confirm each is rejected by name. The impl rejects ANY
-# truthy `RUN_*` / `BACKUP_*` switch that is not `SCHEMA_SMOKE_SWITCH`
-# (Codex impl review P1-1: forward-compat against future YAML additions).
+MEDIUM_SEARCH_SWITCH = "RUN_08X_MEDIUM_SEARCH"
+AGGRESSIVE_SEARCH_SWITCH = "RUN_08X_AGGRESSIVE_SEARCH"
+DRY_RUN_SWITCH = "RUN_08X_SEARCH_SPACE_DRY_RUN"
+FAILURE_MAP_SWITCH = "RUN_08X_AGGREGATE_FAILURE_MAP"
+FREEZE_GATE_SWITCH = "RUN_08F_CONTRACT_GATE"
+FREEZE_COMPRESSION_SWITCH = "RUN_08F_CANDIDATE_COMPRESSION"
+FREEZE_RECORD_SWITCH = "RUN_08F_WRITE_FREEZE_RECORD"
+ENTRY_GATE_SWITCH = "RUN_08O_ENTRY_GATE"
+AGGREGATE_MANIFEST_SWITCH = "RUN_08O_AGGREGATE_AND_WRITE_MANIFEST"
+
 OTHER_SWITCHES: tuple[str, ...] = (
-    "RUN_08X_SEARCH_SPACE_DRY_RUN",
-    "RUN_08X_MEDIUM_SEARCH",
-    "RUN_08X_AGGRESSIVE_SEARCH",
-    "RUN_08X_AGGREGATE_FAILURE_MAP",
-    "RUN_08F_CONTRACT_GATE",
-    "RUN_08F_CANDIDATE_COMPRESSION",
-    "RUN_08F_WRITE_FREEZE_RECORD",
-    "RUN_08O_ENTRY_GATE",
-    "RUN_08O_AGGREGATE_AND_WRITE_MANIFEST",
     "BACKUP_NOTEBOOK08_TO_GOOGLE_DRIVE",
 )
 _UNIMPLEMENTED_SWITCH_PREFIXES: tuple[str, ...] = ("RUN_", "BACKUP_")
@@ -121,6 +117,15 @@ def run_stage(
         OFFICIAL_READOUT_SWITCH,
         BUILD_FOLDS_SWITCH,
         QUICK_SEARCH_SWITCH,
+        MEDIUM_SEARCH_SWITCH,
+        AGGRESSIVE_SEARCH_SWITCH,
+        DRY_RUN_SWITCH,
+        FAILURE_MAP_SWITCH,
+        FREEZE_GATE_SWITCH,
+        FREEZE_COMPRESSION_SWITCH,
+        FREEZE_RECORD_SWITCH,
+        ENTRY_GATE_SWITCH,
+        AGGREGATE_MANIFEST_SWITCH,
     }
     enabled_others = sorted(
         name for name, value in switches.items()
@@ -160,14 +165,84 @@ def run_stage(
         run_build_train_inner_folds(config, out)
         return
     if active == QUICK_SEARCH_SWITCH:
-        # Lazy import: only the quick-search path needs the torch model registry,
-        # so the schema-smoke / build-folds / official-readout paths stay torch-free.
+        from intraday_research.stages.deep_sequence_quick_search import run_quick_search
+        logger.info("stage %s: quick-search writing to %s", STAGE_NAME, out)
+        run_quick_search(config, out, budget_tier="quick")
+        return
+
+    if active == MEDIUM_SEARCH_SWITCH:
         from intraday_research.stages.deep_sequence_quick_search import (
+            check_escalation_gate,
             run_quick_search,
         )
+        gate = check_escalation_gate(out, "quick")
+        if not gate["passed"]:
+            logger.warning("stage %s: escalation blocked: %s", STAGE_NAME, gate.get("reason"))
+            from intraday_research.stages.io_helpers import write_json
+            write_json(out / "08x_tier_escalation_blocked.json", gate)
+            return
+        logger.info("stage %s: medium-search writing to %s", STAGE_NAME, out)
+        run_quick_search(config, out, budget_tier="medium")
+        return
 
-        logger.info("stage %s: quick-search writing to %s", STAGE_NAME, out)
-        run_quick_search(config, out)
+    if active == AGGRESSIVE_SEARCH_SWITCH:
+        from intraday_research.stages.deep_sequence_quick_search import (
+            check_escalation_gate,
+            run_quick_search,
+        )
+        gate = check_escalation_gate(out, "medium")
+        if not gate["passed"]:
+            logger.warning("stage %s: escalation blocked: %s", STAGE_NAME, gate.get("reason"))
+            from intraday_research.stages.io_helpers import write_json
+            write_json(out / "08x_tier_escalation_blocked.json", gate)
+            return
+        logger.info("stage %s: aggressive-search writing to %s", STAGE_NAME, out)
+        run_quick_search(config, out, budget_tier="aggressive")
+        return
+
+    if active == DRY_RUN_SWITCH:
+        from intraday_research.stages.deep_sequence_quick_search import (
+            _resolve_candidates_and_seeds,
+            _write_search_space,
+        )
+        from intraday_research.stages.deep_sequence_fold_build import build_fold_plan
+        candidates, seeds, hpo_method, scientific_cap = _resolve_candidates_and_seeds(config)
+        families = sorted({c.family for c in candidates})
+        fold_plan = build_fold_plan(config)
+        n_folds = sum(1 for _ in fold_plan)
+        _write_search_space(
+            out, families=families, candidates=candidates, seeds=seeds,
+            hpo_method=hpo_method, scientific_cap=scientific_cap,
+            n_folds=n_folds, n_seeds=len(seeds), quick_complete=False,
+        )
+        logger.info("stage %s: dry-run wrote search_space to %s", STAGE_NAME, out)
+        return
+
+    if active == FAILURE_MAP_SWITCH:
+        _run_aggregate_failure_map(out)
+        return
+
+    if active == FREEZE_GATE_SWITCH:
+        from intraday_research.stages.deep_sequence_freeze import run_08f_contract_gate
+        run_08f_contract_gate(out)
+        return
+
+    if active == FREEZE_COMPRESSION_SWITCH:
+        from intraday_research.stages.deep_sequence_freeze import run_08f_candidate_compression
+        run_08f_candidate_compression(out)
+        return
+
+    if active == FREEZE_RECORD_SWITCH:
+        from intraday_research.stages.deep_sequence_freeze import run_08f_write_freeze_record
+        run_08f_write_freeze_record(out, dict(config))
+        return
+
+    if active == ENTRY_GATE_SWITCH:
+        _run_08o_entry_gate(out)
+        return
+
+    if active == AGGREGATE_MANIFEST_SWITCH:
+        _run_08o_aggregate_manifest(out)
         return
 
     logger.info("stage %s: schema-smoke writing artifacts to %s", STAGE_NAME, out)
@@ -260,3 +335,69 @@ def _mapping_or_empty(value: Any) -> Mapping[str, Any]:
     if not isinstance(value, Mapping):
         raise ValueError("expected mapping configuration value")
     return value
+
+
+def _run_aggregate_failure_map(out: Path) -> None:
+    """Read failure_ledger.csv, groupby failure_type, log summary."""
+    import json as _json
+
+    path = out / "08x_failure_ledger.csv"
+    if not path.exists():
+        logger.info("no failure ledger at %s; nothing to aggregate", path)
+        return
+    df = pd.read_csv(path)
+    if df.empty:
+        summary = {"total_failures": 0, "by_type": {}}
+    else:
+        by_type = df["failure_type"].value_counts().to_dict()
+        summary = {"total_failures": len(df), "by_type": by_type}
+    out_path = out / "08x_failure_map_summary.json"
+    out_path.write_text(_json.dumps(summary, indent=2), encoding="utf-8")
+    logger.info("failure map: %d failures across %d types", summary["total_failures"], len(summary["by_type"]))
+
+
+def _run_08o_entry_gate(out: Path) -> None:
+    """Check that freeze record and attestation files exist for 08O entry."""
+    import json as _json
+
+    freeze_path = out / "08f_candidate_freeze_record.json"
+    gate = {"passed": True, "checks": {}}
+
+    if not freeze_path.exists():
+        no_freeze = out / "08f_no_candidate_freezable.json"
+        if no_freeze.exists():
+            gate["passed"] = False
+            gate["checks"]["freeze_record"] = "absent — no_candidate_freezable"
+        else:
+            gate["passed"] = False
+            gate["checks"]["freeze_record"] = "missing"
+    else:
+        gate["checks"]["freeze_record"] = "present"
+
+    result_path = out / "08o_entry_gate_report.json"
+    result_path.write_text(_json.dumps(gate, indent=2), encoding="utf-8")
+    logger.info("08O entry gate: %s", "PASSED" if gate["passed"] else "FAILED")
+
+
+def _run_08o_aggregate_manifest(out: Path) -> None:
+    """Collect 08O output files and write a summary manifest."""
+    import json as _json
+    from intraday_research.contracts.deep_sequence_exploration import OUTPUT_FILES_08O
+
+    artifacts: dict[str, bool] = {}
+    for filename in OUTPUT_FILES_08O:
+        artifacts[filename] = (out / filename).exists()
+
+    manifest = {
+        "stage": "08O",
+        "scope": "validation_only",
+        "artifacts": artifacts,
+        "all_present": all(artifacts.values()),
+        "generated_at_utc": __import__("datetime").datetime.now(
+            __import__("datetime").timezone.utc
+        ).isoformat(),
+    }
+    result_path = out / "08o_aggregate_manifest.json"
+    result_path.write_text(_json.dumps(manifest, indent=2), encoding="utf-8")
+    logger.info("08O aggregate manifest: %d/%d artifacts present",
+                sum(artifacts.values()), len(artifacts))

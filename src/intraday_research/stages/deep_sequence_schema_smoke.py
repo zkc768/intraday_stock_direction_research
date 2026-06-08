@@ -18,9 +18,11 @@ from intraday_research.artifact_preflight import (
 )
 from intraday_research.contracts.deep_sequence_exploration import (
     OUTPUT_FILES_08X,
+    PER_TICKER_REQUIRED_COLUMNS,
     REQUIRED_08X_RUN_MANIFEST_FIELDS,
     REQUIRED_TRIAL_LEDGER_COLUMNS,
     validate_08x_fold_results_frame,
+    validate_08x_per_ticker_frame,
     validate_08x_run_manifest,
     validate_08x_search_space,
     validate_trial_ledger_frame,
@@ -62,6 +64,27 @@ FAILURE_LEDGER_COLUMNS: tuple[str, ...] = (
     "candidate_family",
     "candidate_id",
 )
+# §11.1 / §14.1 / §14.3 per-ticker train-inner metrics (#5F-7). Ordered tuple for
+# the writer; the contract owns the matching set + validator.
+PER_TICKER_COLUMNS: tuple[str, ...] = (
+    "candidate_id",
+    "candidate_family",
+    "ticker",
+    "n_rows_total",
+    "n_trials_expected",
+    "n_trials_contributing",
+    "coverage_rate",
+    "macro_f1_mean",
+    "delta_macro_f1_vs_dummy_mean",
+    "positive_delta",
+    "coverage_status",
+)
+# Fail loud at import if the ordered tuple drifts from the contract set.
+if set(PER_TICKER_COLUMNS) != PER_TICKER_REQUIRED_COLUMNS:
+    raise RuntimeError(
+        "PER_TICKER_COLUMNS (schema_smoke) does not match "
+        "PER_TICKER_REQUIRED_COLUMNS (contract)"
+    )
 CANDIDATE_COMPRESSION_COLUMNS: tuple[str, ...] = (
     "candidate_id",
     "candidate_family",
@@ -113,6 +136,7 @@ SCHEMA_SMOKE_ARTIFACT_SPECS: tuple[ArtifactSpec, ...] = (
     csv_artifact(
         "08x_failure_ledger.csv", FAILURE_LEDGER_COLUMNS, require_non_empty=False
     ),
+    csv_artifact("08x_per_ticker.csv", PER_TICKER_COLUMNS, require_non_empty=False),
     csv_artifact(
         "08x_candidate_compression_table.csv",
         CANDIDATE_COMPRESSION_COLUMNS,
@@ -141,6 +165,7 @@ def write_schema_smoke_artifacts(out: Path) -> None:
     _write_fold_results_header(out)
     _write_seed_summary_header(out)
     _write_failure_ledger_header(out)
+    _write_per_ticker_header(out)
     _write_candidate_compression_header(out)
     _write_run_manifest(out)
     _write_environment_manifest(out)
@@ -193,6 +218,12 @@ def _write_failure_ledger_header(out: Path) -> None:
     pd.DataFrame(columns=list(FAILURE_LEDGER_COLUMNS)).to_csv(
         out / "08x_failure_ledger.csv", index=False
     )
+
+
+def _write_per_ticker_header(out: Path) -> None:
+    df = pd.DataFrame(columns=list(PER_TICKER_COLUMNS))
+    validate_08x_per_ticker_frame(df, require_non_empty=False)
+    df.to_csv(out / "08x_per_ticker.csv", index=False)
 
 
 def _write_candidate_compression_header(out: Path) -> None:

@@ -26,7 +26,10 @@ import torch
 from intraday_research.contracts.deep_sequence_exploration import (
     REQUIRED_TRIAL_LEDGER_COLUMNS,
 )
-from intraday_research.models.deep_sequence.metrics import compute_trial_metrics
+from intraday_research.models.deep_sequence.metrics import (
+    compute_per_ticker_delta,
+    compute_trial_metrics,
+)
 from intraday_research.models.deep_sequence.registry import build_classifier
 
 
@@ -109,13 +112,22 @@ def run_single_trial(
     seed: int,
     budget_tier: str,
     model_config: Mapping[str, Any],
-) -> dict[str, Any]:
+    collect_per_ticker: bool = False,
+) -> dict[str, Any] | tuple[dict[str, Any], list[dict[str, Any]]]:
     """Fit one model on one fold/seed; return one 29-column trial-ledger row.
 
     Fits on ``X[train_idx]`` only and scores ``X[val_idx]`` only. On model-fit
     failure the row carries ``fit_status='failed'`` + a mapped ``failure_type`` +
     NaN metrics (no exception is raised to the caller). Invalid indices
     (out of bounds / empty / overlapping) raise ``ValueError`` (caller contract).
+
+    When ``collect_per_ticker`` is True the return is ``(row, per_ticker_rows)``;
+    ``per_ticker_rows`` is ``compute_per_ticker_delta`` over the val rows for a
+    COMPLETED fit (else ``[]``). It is computed after the fit's success is recorded
+    (#5F-7 Q1), so a per-ticker error never reclassifies a good fit, and the caller
+    decides whether to keep the rows AFTER its own post-trial guards (e.g. the
+    class-collapse reclassification in quick-search -- Codex #5F-7 P1-1). Default
+    (False) returns just the row, preserving the #5F-5/#5F-6 contract.
     """
     X = np.asarray(X)
     y = np.asarray(y)
@@ -158,6 +170,11 @@ def run_single_trial(
 
     # model_config must not carry random_state (the runner owns the seed).
     config = {k: v for k, v in dict(model_config).items() if k != "random_state"}
+
+    # Hoisted so per-ticker (computed after the try, only for a completed fit) can
+    # reference the val predictions without re-running anything.
+    y_pred: np.ndarray | None = None
+    per_ticker_rows: list[dict[str, Any]] = []
 
     rng_state = _snapshot_rng()
     tm_was_tracing = tracemalloc.is_tracing()
@@ -220,4 +237,14 @@ def run_single_trial(
         raise RuntimeError(
             f"trial row column drift; extra={extra} missing={missing}"
         )
+
+    if collect_per_ticker:
+        # Computed AFTER the fit succeeded (and outside the try/finally) so a
+        # per-ticker error can never reclassify a good fit. Only completed fits
+        # carry per-ticker rows; the caller filters by its post-trial status.
+        if row["fit_status"] == "completed" and y_pred is not None:
+            per_ticker_rows = compute_per_ticker_delta(
+                y[val_idx], y_pred, ticker_ids[val_idx]
+            )
+        return row, per_ticker_rows
     return row

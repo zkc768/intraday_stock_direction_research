@@ -116,8 +116,9 @@ def _recorder(class0=0.5, class1=0.5):
     varies deterministically with the seed (so seed aggregation is testable)."""
 
     def _rec(X, y, ticker_ids, *, train_idx, val_idx, trial_id, candidate_family,
-             candidate_id, config_hash, fold_id, seed, budget_tier, model_config):
-        return _fake_row(
+             candidate_id, config_hash, fold_id, seed, budget_tier, model_config,
+             collect_per_ticker=False):
+        row = _fake_row(
             trial_id=trial_id,
             candidate_family=candidate_family,
             candidate_id=candidate_id,
@@ -128,6 +129,9 @@ def _recorder(class0=0.5, class1=0.5):
             class1=class1,
             macro_f1=0.6 + 0.05 * int(seed),
         )
+        if collect_per_ticker:
+            return row, []
+        return row
 
     return _rec
 
@@ -276,11 +280,14 @@ def test_quick_search_writes_search_space_before_trials(tmp_path, monkeypatch):
         assert json.loads(space_path.read_text())["search_space_version"] == (
             qs.QUICK_SEARCH_VERSION
         )
-        return _fake_row(trial_id=trial_id, **{
+        row = _fake_row(trial_id=trial_id, **{
             k: kwargs[k] for k in (
                 "candidate_family", "candidate_id", "config_hash", "fold_id", "seed"
             )
         })
+        if kwargs.get("collect_per_ticker"):
+            return row, []
+        return row
 
     monkeypatch.setattr(qs, "run_single_trial", _rec)
     qs.run_quick_search(config, tmp_path)

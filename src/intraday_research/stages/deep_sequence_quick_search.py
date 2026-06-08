@@ -38,6 +38,7 @@ from intraday_research.contracts.deep_sequence_exploration import (
     SEARCH_ELIGIBLE_ARCHITECTURE_FAMILIES,
     TOTAL_TRIAL_BUDGET_CAP_ACROSS_ALL_FAMILIES,
     validate_08x_fold_results_frame,
+    validate_08x_per_ticker_frame,
     validate_08x_run_manifest,
     validate_08x_search_space,
     validate_trial_ledger_frame,
@@ -59,6 +60,7 @@ from intraday_research.stages.deep_sequence_fold_build import (
 from intraday_research.stages.deep_sequence_schema_smoke import (
     FAILURE_LEDGER_COLUMNS,
     FOLD_RESULTS_COLUMNS,
+    PER_TICKER_COLUMNS,
     SEED_SUMMARY_COLUMNS,
     write_schema_smoke_artifacts,
 )
@@ -72,11 +74,18 @@ from intraday_research.stages.run_manifest import write_run_manifest
 
 QUICK_SEARCH_VERSION = "08x_quick_search_v1"
 
-# Section 11 QUICK envelope upper bounds (Codex #5F-6 P1-2 / Q8).
-QUICK_MIN_CANDIDATES = 4
-QUICK_MAX_CANDIDATES = 8
-QUICK_MAX_FOLDS = 2
-QUICK_MAX_SEEDS = 2
+# Section 11 budget tier limits (§11).
+TIER_LIMITS: dict[str, dict[str, int]] = {
+    "quick": {"min_candidates": 4, "max_candidates": 8, "max_folds": 2, "max_seeds": 2},
+    "medium": {"min_candidates": 20, "max_candidates": 40, "max_folds": 3, "max_seeds": 3},
+    "aggressive": {"min_candidates": 80, "max_candidates": 200, "max_folds": 5, "max_seeds": 5},
+}
+
+# Backward-compat aliases used by existing tests.
+QUICK_MIN_CANDIDATES = TIER_LIMITS["quick"]["min_candidates"]
+QUICK_MAX_CANDIDATES = TIER_LIMITS["quick"]["max_candidates"]
+QUICK_MAX_FOLDS = TIER_LIMITS["quick"]["max_folds"]
+QUICK_MAX_SEEDS = TIER_LIMITS["quick"]["max_seeds"]
 _QUICK_TIER_TRIAL_LIMIT = QUICK_MAX_CANDIDATES * QUICK_MAX_FOLDS * QUICK_MAX_SEEDS
 
 _NAN = float("nan")
@@ -108,21 +117,18 @@ class _Candidate:
     config_hash: str
 
 
-def run_quick_search(config: Mapping[str, Any], out: Path) -> pd.DataFrame:
-    """Dispatch body for RUN_08X_QUICK_SEARCH; returns the assembled trial ledger.
+def run_quick_search(
+    config: Mapping[str, Any], out: Path, *, budget_tier: str = "quick",
+) -> pd.DataFrame:
+    """Run a (candidate x fold x seed) search loop for any budget tier.
 
-    1. resolve the frozen candidate + masked train arrays (X, y, ticker_ids, ts);
-    2. build the fold plan + folds (one pass) + fold-assignment hash;
-    3. resolve candidates + seeds; budget gates;
-    4. write + validate ``08x_search_space.json`` (BEFORE any trial);
-    5. dependency + fold class-balance preflights;
-    6. loop ``run_single_trial`` with the class-collapse guard;
-    7. write trial ledger / seed summary / failure ledger + run manifest (overwrite).
+    Returns the assembled trial ledger. Also writes per-ticker summary CSV.
     """
+    if budget_tier not in TIER_LIMITS:
+        raise ValueError(f"unknown budget_tier {budget_tier!r}; use {sorted(TIER_LIMITS)}")
+
     candidate = _frozen_candidate(config)
     X, y, ticker_ids, timestamps = resolve_train_inner_arrays(config)
-    # Bind the evidence to the actual masked train-inner rows, not just the
-    # positional fold layout (Codex #5F-6 impl-review P1).
     index_sha = train_inner_index_sha256(timestamps, ticker_ids, y)
     fold_plan = build_fold_plan(config)
     _assert_label_horizon_provenance(candidate, fold_plan)
@@ -131,10 +137,8 @@ def run_quick_search(config: Mapping[str, Any], out: Path) -> pd.DataFrame:
     candidates, seeds, hpo_method, scientific_cap = _resolve_candidates_and_seeds(config)
     families = sorted({cand.family for cand in candidates})
     n_candidates, n_folds, n_seeds = len(candidates), len(folds), len(seeds)
-    quick_complete = _check_budget(n_candidates, n_folds, n_seeds, scientific_cap)
+    tier_complete = _check_budget(n_candidates, n_folds, n_seeds, scientific_cap, budget_tier)
 
-    # Lay the full 8-artifact skeleton once on a fresh dir, then overwrite the real
-    # artifacts; never clobber a prior run's environment / compression artifacts.
     if not (out / "08x_search_space.json").exists():
         write_schema_smoke_artifacts(out)
 
@@ -148,13 +152,17 @@ def run_quick_search(config: Mapping[str, Any], out: Path) -> pd.DataFrame:
         scientific_cap=scientific_cap,
         n_folds=n_folds,
         n_seeds=n_seeds,
-        quick_complete=quick_complete,
+        quick_complete=tier_complete,
+        budget_tier=budget_tier,
     )
 
     _dependency_preflight(families)
     fold_usable = {fold_id: _fold_usable(y, tr, va) for fold_id, tr, va in folds}
+    expected_tickers = sorted(set(tk.item() if hasattr(tk, "item") else tk for tk in np.unique(ticker_ids)))
+    n_trials_per_candidate = n_folds * n_seeds
 
     rows: list[dict[str, Any]] = []
+    raw_per_ticker: list[dict[str, Any]] = []
     for cand in candidates:
         for fold_id, train_idx, val_idx in folds:
             for seed in seeds:
@@ -171,10 +179,11 @@ def run_quick_search(config: Mapping[str, Any], out: Path) -> pd.DataFrame:
                             train_n=int(train_idx.size),
                             val_n=int(val_idx.size),
                             reason="single-class train/val fold; skipped before fit",
+                            budget_tier=budget_tier,
                         )
                     )
                     continue
-                row = run_single_trial(
+                row, pt_rows = run_single_trial(
                     X,
                     y,
                     ticker_ids,
@@ -186,10 +195,16 @@ def run_quick_search(config: Mapping[str, Any], out: Path) -> pd.DataFrame:
                     config_hash=cand.config_hash,
                     fold_id=fold_id,
                     seed=int(seed),
-                    budget_tier="quick",
+                    budget_tier=budget_tier,
                     model_config=cand.model_config,
+                    collect_per_ticker=True,
                 )
                 _apply_class_collapse_guard(row)
+                if row["fit_status"] == "completed" and pt_rows:
+                    for pt in pt_rows:
+                        pt["candidate_id"] = cand.candidate_id
+                        pt["candidate_family"] = cand.family
+                    raw_per_ticker.extend(pt_rows)
                 rows.append(row)
 
     ledger_df = pd.DataFrame(rows, columns=sorted(REQUIRED_TRIAL_LEDGER_COLUMNS))
@@ -198,6 +213,11 @@ def run_quick_search(config: Mapping[str, Any], out: Path) -> pd.DataFrame:
 
     _build_seed_summary(ledger_df).to_csv(out / "08x_seed_summary.csv", index=False)
     _build_failure_ledger(ledger_df).to_csv(out / "08x_failure_ledger.csv", index=False)
+
+    per_ticker_df = _build_per_ticker_summary(
+        raw_per_ticker, candidates, expected_tickers, n_trials_per_candidate,
+    )
+    per_ticker_df.to_csv(out / "08x_per_ticker.csv", index=False)
 
     _write_quick_run_manifest(
         out,
@@ -210,7 +230,8 @@ def run_quick_search(config: Mapping[str, Any], out: Path) -> pd.DataFrame:
         assignment_sha=assignment_sha,
         index_sha=index_sha,
         config=config,
-        quick_complete=quick_complete,
+        quick_complete=tier_complete,
+        budget_tier=budget_tier,
     )
     return ledger_df
 
@@ -374,31 +395,29 @@ def _make_candidate(family: str, candidate_id: str, model_config: dict[str, Any]
 
 
 def _check_budget(
-    n_candidates: int, n_folds: int, n_seeds: int, scientific_cap: int
+    n_candidates: int, n_folds: int, n_seeds: int, scientific_cap: int,
+    tier: str = "quick",
 ) -> bool:
-    """Enforce the QUICK envelope upper bounds + scientific cap; return whether the
-    run meets the full QUICK lower-bound envelope (Codex #5F-6 P1-2 / Q8)."""
-    if n_folds > QUICK_MAX_FOLDS:
-        raise ValueError(f"quick tier allows <= {QUICK_MAX_FOLDS} folds; got {n_folds}")
-    if n_seeds > QUICK_MAX_SEEDS:
-        raise ValueError(f"quick tier allows <= {QUICK_MAX_SEEDS} seeds; got {n_seeds}")
-    if n_candidates > QUICK_MAX_CANDIDATES:
-        raise ValueError(
-            f"quick tier allows <= {QUICK_MAX_CANDIDATES} candidates; got {n_candidates}"
-        )
+    """Enforce tier envelope upper bounds + scientific cap; return whether the
+    run meets the full tier lower-bound envelope."""
+    limits = TIER_LIMITS[tier]
+    max_c, max_f, max_s = limits["max_candidates"], limits["max_folds"], limits["max_seeds"]
+    min_c = limits["min_candidates"]
+    if n_folds > max_f:
+        raise ValueError(f"{tier} tier allows <= {max_f} folds; got {n_folds}")
+    if n_seeds > max_s:
+        raise ValueError(f"{tier} tier allows <= {max_s} seeds; got {n_seeds}")
+    if n_candidates > max_c:
+        raise ValueError(f"{tier} tier allows <= {max_c} candidates; got {n_candidates}")
     grid = n_candidates * n_folds * n_seeds
-    cap = min(_QUICK_TIER_TRIAL_LIMIT, scientific_cap)
+    tier_limit = max_c * max_f * max_s
+    cap = min(tier_limit, scientific_cap)
     if grid > cap:
         raise ValueError(
-            f"quick-search grid {grid} exceeds cap {cap} "
-            f"(min of quick tier limit {_QUICK_TIER_TRIAL_LIMIT} and scientific cap "
-            f"{scientific_cap})"
+            f"{tier} grid {grid} exceeds cap {cap} "
+            f"(min of tier limit {tier_limit} and scientific cap {scientific_cap})"
         )
-    return (
-        QUICK_MIN_CANDIDATES <= n_candidates <= QUICK_MAX_CANDIDATES
-        and 1 <= n_folds <= QUICK_MAX_FOLDS
-        and 1 <= n_seeds <= QUICK_MAX_SEEDS
-    )
+    return min_c <= n_candidates <= max_c and 1 <= n_folds <= max_f and 1 <= n_seeds <= max_s
 
 
 def _dependency_preflight(families: list[str]) -> None:
@@ -501,9 +520,10 @@ def _write_search_space(
     n_folds: int,
     n_seeds: int,
     quick_complete: bool,
+    budget_tier: str = "quick",
 ) -> str:
     """Materialize + validate + persist ``08x_search_space.json`` BEFORE any trial;
-    return its sha256 (Codex #5F-6 P1-3)."""
+    return its sha256."""
     per_family: dict[str, int] = {}
     for cand in candidates:
         per_family[cand.family] = per_family.get(cand.family, 0) + n_folds * n_seeds
@@ -526,7 +546,7 @@ def _write_search_space(
         "deferred_07g_gaps": {},
         "official_validation_used": False,
         "holdout_test_authorized": False,
-        "budget_tier": "quick",
+        "budget_tier": budget_tier,
         "quick_evidence_complete": bool(quick_complete),
         "candidates": [
             {
@@ -580,8 +600,9 @@ def _write_quick_run_manifest(
     index_sha: str,
     config: Mapping[str, Any],
     quick_complete: bool,
+    budget_tier: str = "quick",
 ) -> None:
-    """Write the QUICK run manifest with full provenance (Codex #5F-6 Q7 + impl P1)."""
+    """Write the run manifest with provenance."""
     status = ledger_df["fit_status"].astype(str)
     modes = [spec.scheme for spec in fold_plan]
     label_horizon_k = fold_plan[0].label_horizon_k if fold_plan else 0
@@ -607,7 +628,7 @@ def _write_quick_run_manifest(
         "train_inner_fold_policy": "+".join(modes),
         "purge_policy": f"horizon_bar_purge_k={label_horizon_k}",
         "embargo_policy": "none" if embargo == 0 else f"symmetric_embargo_k={embargo}",
-        "search_budget_tier": "quick",
+        "search_budget_tier": budget_tier,
         "trial_count_requested": int(requested),
         "trial_count_completed": int((status == "completed").sum()),
         "trial_count_failed": int((status == "failed").sum()),
@@ -655,6 +676,7 @@ def _skipped_trial_row(
     train_n: int,
     val_n: int,
     reason: str,
+    budget_tier: str = "quick",
 ) -> dict[str, Any]:
     """A schema-valid ``fit_status='skipped'`` row for an unusable fold (no fit)."""
     row: dict[str, Any] = {
@@ -664,7 +686,7 @@ def _skipped_trial_row(
         "config_hash": str(config_hash),
         "fold_id": str(fold_id),
         "seed": int(seed),
-        "budget_tier": "quick",
+        "budget_tier": str(budget_tier),
         "max_epochs": _NAN,
         "actual_epochs": _NAN,
         "early_stop_reason": "",
@@ -685,3 +707,131 @@ def _skipped_trial_row(
         row[col] = _NAN
     _assert_row_columns(row)
     return row
+
+
+def _build_per_ticker_summary(
+    raw_rows: list[dict[str, Any]],
+    candidates: list[_Candidate],
+    expected_tickers: list[Any],
+    n_trials_per_candidate: int,
+) -> pd.DataFrame:
+    """Aggregate raw per-ticker trial rows into the 08x_per_ticker.csv schema.
+
+    Produces one row per (candidate, ticker) in the complete grid. Tickers with
+    no contributing trials get NaN metrics and coverage_status='insufficient'.
+    """
+    result: list[dict[str, Any]] = []
+    for cand in candidates:
+        cand_rows = [r for r in raw_rows if r.get("candidate_id") == cand.candidate_id]
+        for ticker in expected_tickers:
+            ticker_rows = [r for r in cand_rows if r["ticker"] == ticker]
+            contributing = [r for r in ticker_rows if r.get("both_classes_present", False)]
+            n_contrib = len(contributing)
+            coverage = n_contrib / n_trials_per_candidate if n_trials_per_candidate > 0 else 0.0
+            n_rows_total = sum(r["n_rows"] for r in ticker_rows) if ticker_rows else 0
+            if contributing:
+                macro_f1_mean = float(np.mean([r["macro_f1"] for r in contributing]))
+                delta_mean = float(np.mean([r["delta_macro_f1_vs_dummy"] for r in contributing]))
+                positive = bool(delta_mean > 0)
+            else:
+                macro_f1_mean = _NAN
+                delta_mean = _NAN
+                positive = False
+            result.append({
+                "candidate_id": cand.candidate_id,
+                "candidate_family": cand.family,
+                "ticker": ticker,
+                "n_rows_total": int(n_rows_total),
+                "n_trials_expected": int(n_trials_per_candidate),
+                "n_trials_contributing": int(n_contrib),
+                "coverage_rate": float(coverage),
+                "macro_f1_mean": macro_f1_mean,
+                "delta_macro_f1_vs_dummy_mean": delta_mean,
+                "positive_delta": positive,
+                "coverage_status": "ok" if n_contrib > 0 else "insufficient",
+            })
+    return pd.DataFrame(result, columns=list(PER_TICKER_COLUMNS))
+
+
+def check_escalation_gate(
+    out: Path,
+    current_tier: str,
+) -> dict[str, Any]:
+    """Check §11.1 tier escalation gate. Returns a dict with 'passed' bool + details.
+
+    quick->medium: best deep candidate lcb_delta_macro_f1 >= 0.003 AND positive
+    on >= 4 tickers (from per_ticker.csv).
+    medium->aggressive: additionally, seed_std_macro_f1 <= 0.01 on the leader.
+    """
+    from intraday_research.contracts.deep_sequence_exploration import (
+        TIER_ESCALATION_MEDIUM_TO_AGGRESSIVE_SEED_STD_MAX,
+        TIER_ESCALATION_QUICK_TO_MEDIUM_LCB_DELTA_MIN,
+        TIER_ESCALATION_QUICK_TO_MEDIUM_POSITIVE_TICKER_MIN,
+    )
+
+    seed_summary = pd.read_csv(out / "08x_seed_summary.csv")
+    per_ticker = pd.read_csv(out / "08x_per_ticker.csv")
+
+    # Find best deep candidate by lcb_delta_macro_f1 (exclude lightgbm control).
+    delta_rows = seed_summary[
+        (seed_summary["metric"] == "delta_macro_f1_vs_dummy")
+    ].copy()
+    if delta_rows.empty:
+        return {"passed": False, "reason": "no delta_macro_f1_vs_dummy in seed_summary"}
+
+    # Merge candidate_family from per_ticker to identify control.
+    fam_map = per_ticker[["candidate_id", "candidate_family"]].drop_duplicates()
+    delta_rows = delta_rows.merge(fam_map, on="candidate_id", how="left")
+    deep_rows = delta_rows[delta_rows["candidate_family"] != "last_step_lightgbm_control"]
+    if deep_rows.empty:
+        return {"passed": False, "reason": "no deep candidates in seed_summary"}
+
+    best_idx = deep_rows["seed_lcb_95"].idxmax()
+    best_id = deep_rows.loc[best_idx, "candidate_id"]
+    best_lcb = float(deep_rows.loc[best_idx, "seed_lcb_95"])
+
+    # Count positive tickers for best candidate.
+    best_pt = per_ticker[per_ticker["candidate_id"] == best_id]
+    n_positive = int(best_pt["positive_delta"].sum())
+
+    lcb_ok = best_lcb >= TIER_ESCALATION_QUICK_TO_MEDIUM_LCB_DELTA_MIN
+    ticker_ok = n_positive >= TIER_ESCALATION_QUICK_TO_MEDIUM_POSITIVE_TICKER_MIN
+
+    result: dict[str, Any] = {
+        "best_candidate_id": best_id,
+        "best_lcb_delta": best_lcb,
+        "n_positive_tickers": n_positive,
+        "lcb_gate": lcb_ok,
+        "ticker_gate": ticker_ok,
+    }
+
+    if current_tier == "quick":
+        result["passed"] = lcb_ok and ticker_ok
+        if not result["passed"]:
+            result["reason"] = (
+                f"lcb_delta={best_lcb:.4f} (need>={TIER_ESCALATION_QUICK_TO_MEDIUM_LCB_DELTA_MIN}), "
+                f"positive_tickers={n_positive} (need>={TIER_ESCALATION_QUICK_TO_MEDIUM_POSITIVE_TICKER_MIN})"
+            )
+        return result
+
+    if current_tier == "medium":
+        # Additional check: seed_std_macro_f1 <= 0.01.
+        std_row = seed_summary[
+            (seed_summary["candidate_id"] == best_id)
+            & (seed_summary["metric"] == "macro_f1")
+        ]
+        seed_std = float(std_row["seed_std"].iloc[0]) if not std_row.empty else _NAN
+        std_ok = np.isfinite(seed_std) and seed_std <= TIER_ESCALATION_MEDIUM_TO_AGGRESSIVE_SEED_STD_MAX
+        result["seed_std_macro_f1"] = seed_std
+        result["std_gate"] = std_ok
+        result["passed"] = lcb_ok and ticker_ok and std_ok
+        if not result["passed"]:
+            result["reason"] = (
+                f"lcb_delta={best_lcb:.4f}, positive_tickers={n_positive}, "
+                f"seed_std={seed_std:.4f} (need<={TIER_ESCALATION_MEDIUM_TO_AGGRESSIVE_SEED_STD_MAX})"
+            )
+        return result
+
+    result["passed"] = False
+    result["reason"] = f"no escalation from tier {current_tier!r}"
+    return result

@@ -17,6 +17,8 @@ nothing here reads or scores official validation / holdout.
 
 from __future__ import annotations
 
+from typing import Any
+
 import numpy as np
 
 # The exact set of metric columns this module produces (subset of the contract's
@@ -138,3 +140,63 @@ def compute_trial_metrics(
         "class1_pred_rate": float(np.mean(yp == 1)),
         "ticker_max_share": float(counts.max() / n),
     }
+
+
+def compute_per_ticker_delta(
+    y_true: np.ndarray, y_pred: np.ndarray, ticker_ids: np.ndarray
+) -> list[dict[str, Any]]:
+    """Per-ticker ``macro_f1`` + ``delta_macro_f1_vs_dummy`` on a fold's val rows.
+
+    One dict per UNIQUE ticker (sorted order). For a ticker whose rows carry BOTH
+    classes 0 and 1: ``macro_f1`` (sklearn macro F1) and ``delta_macro_f1_vs_dummy``
+    (vs the same-row stratified-null, identical basis to ``compute_trial_metrics``);
+    for a single-class ticker: ``both_classes_present=False`` with NaN metrics.
+
+    Unlike ``compute_trial_metrics`` (which requires both classes over the WHOLE
+    slice), this NEVER raises on a single-class ticker slice — 08X #5F-7 per-ticker
+    emission must not turn a completed trial into a failure (Codex #5F-7 Q5). Row:
+    ``{ticker, n_rows, both_classes_present, macro_f1, delta_macro_f1_vs_dummy}``.
+    """
+    yt = np.asarray(y_true)
+    yp = np.asarray(y_pred)
+    tk = np.asarray(ticker_ids)
+    if yt.ndim != 1 or yp.ndim != 1 or tk.ndim != 1:
+        raise ValueError("y_true, y_pred, ticker_ids must be 1-D arrays")
+    if not (yt.shape[0] == yp.shape[0] == tk.shape[0]):
+        raise ValueError("y_true, y_pred, ticker_ids must have the same length")
+    if _ticker_ids_have_missing(tk):
+        raise ValueError("ticker_ids must not contain missing/NaN/None entries.")
+    try:
+        from sklearn.metrics import f1_score
+    except ImportError as exc:  # pragma: no cover - environment guard
+        raise ImportError(
+            "compute_per_ticker_delta requires scikit-learn "
+            "(pip install scikit-learn>=1.4)."
+        ) from exc
+
+    rows: list[dict[str, Any]] = []
+    for ticker in np.unique(tk):
+        mask = tk == ticker
+        yt_t = yt[mask]
+        both_classes_present = set(int(v) for v in np.unique(yt_t)) == {0, 1}
+        if both_classes_present:
+            yp_t = yp[mask].astype(np.int64, copy=False)
+            yt_t = yt_t.astype(np.int64, copy=False)
+            macro_f1 = float(
+                f1_score(yt_t, yp_t, labels=[0, 1], average="macro", zero_division=0)
+            )
+            dummy = _stratified_null_macro_f1(yt_t)
+            delta_macro_f1_vs_dummy = macro_f1 - dummy
+        else:
+            macro_f1 = float("nan")
+            delta_macro_f1_vs_dummy = float("nan")
+        rows.append(
+            {
+                "ticker": ticker.item() if hasattr(ticker, "item") else ticker,
+                "n_rows": int(mask.sum()),
+                "both_classes_present": both_classes_present,
+                "macro_f1": macro_f1,
+                "delta_macro_f1_vs_dummy": delta_macro_f1_vs_dummy,
+            }
+        )
+    return rows

@@ -10,6 +10,7 @@ from intraday_research.models.deep_sequence.base import SequenceClassifier
 from intraday_research.models.deep_sequence.dlinear import DLinearClassifier
 from intraday_research.models.deep_sequence.fusion import (
     DLinearLogitsPlusTCNLogitsFusion,
+    DLinearTrendPlusTCNResidualFusion,
     LateAverageProbabilitiesFusion,
     SmallFusionMLP,
 )
@@ -364,3 +365,146 @@ def test_mlp_trains_on_oof_only(monkeypatch):
     # (the first _predict_logits call during fit).
     assert rec["dl_logit"][0] == n_tail
     assert rec["tcn_logit"][0] == n_tail
+
+
+# ---- Slice 3: DLinearTrendPlusTCNResidualFusion (joint causal module) --
+
+_TC_ARCH_FAST = {"num_blocks": 2, "channels": (16, 16)}
+
+
+def _mk_tr(**overrides):
+    kw = dict(
+        dlinear_config={"moving_avg_kernel": 5},
+        tcn_config=dict(_TC_ARCH_FAST),
+        random_state=0,
+        max_epochs=3,
+        batch_size=16,
+    )
+    kw.update(overrides)
+    return DLinearTrendPlusTCNResidualFusion(**kw)
+
+
+def test_tr_is_sequence_classifier():
+    assert isinstance(DLinearTrendPlusTCNResidualFusion(), SequenceClassifier)
+
+
+def test_tr_fit_returns_self_and_proba_contract():
+    X, y = _make_xy(n=32, seed=2)
+    clf = _mk_tr()
+    assert clf.fit(X, y) is clf
+    proba = clf.predict_proba(X)
+    assert proba.shape == (32, 2)
+    assert proba.dtype == np.float64
+    np.testing.assert_allclose(proba.sum(axis=1), 1.0, atol=1e-6)
+    assert (proba >= 0.0).all() and (proba <= 1.0).all()
+
+
+def test_tr_determinism_same_seed_bit_exact():
+    X, y = _make_xy(n=32, seed=3)
+    p1 = _mk_tr(random_state=7).fit(X, y).predict_proba(X)
+    p2 = _mk_tr(random_state=7).fit(X, y).predict_proba(X)
+    np.testing.assert_array_equal(p1, p2)
+
+
+def test_tr_causal_no_future_leak():
+    # THE key slice-3 gate: the causal trailing MA must keep the residual TCN
+    # branch causal end-to-end (a centered MA would leak future into residual[<=t]).
+    X, y = _make_xy(n=12, c=2, seed=3)
+    clf = _mk_tr(random_state=0).fit(X, y)
+    rng = np.random.default_rng(99)
+    t = 10
+    xa = rng.standard_normal((1, 20, 2)).astype(np.float64)
+    xb = xa.copy()
+    xb[:, t + 1:, :] = rng.standard_normal((1, 20 - t - 1, 2))  # perturb the FUTURE
+    fa = clf._forward_features(xa)  # (1, c_last, L)
+    fb = clf._forward_features(xb)
+    np.testing.assert_array_equal(fa[:, :, : t + 1], fb[:, :, : t + 1])
+    assert not np.array_equal(fa[:, :, t + 1:], fb[:, :, t + 1:])  # future does differ
+
+
+def test_tr_fit_differs_from_late_average():
+    X, y = _make_xy(n=32, seed=4)
+    tr = _mk_tr(random_state=0).fit(X, y).predict_proba(X)
+    avg = _mk(LateAverageProbabilitiesFusion, random_state=0).fit(X, y).predict_proba(X)
+    assert not np.allclose(tr, avg)
+
+
+@pytest.mark.parametrize("kernel", [3, 5, 7, 11])
+def test_tr_axis_moving_avg_kernel(kernel):
+    X, y = _make_xy(n=32, seed=2)
+    clf = _mk_tr(dlinear_config={"moving_avg_kernel": kernel}).fit(X, y)
+    assert clf.predict_proba(X).shape == (32, 2)
+
+
+def test_tr_reject_bad_moving_avg_kernel():
+    with pytest.raises(ValueError, match="moving_avg_kernel"):
+        DLinearTrendPlusTCNResidualFusion(dlinear_config={"moving_avg_kernel": 4})
+
+
+def test_tr_reject_unsupported_dlinear_key():
+    with pytest.raises(ValueError, match="moving_avg_kernel"):
+        DLinearTrendPlusTCNResidualFusion(dlinear_config={"individual_channels": True})
+
+
+def test_tr_reject_bad_tcn_axis():
+    with pytest.raises(ValueError, match="kernel_size"):
+        DLinearTrendPlusTCNResidualFusion(tcn_config={"kernel_size": 4})
+
+
+def test_tr_tcn_config_forwarding():
+    X, y = _make_xy(n=32, seed=2)
+    clf = _mk_tr(
+        tcn_config={"num_blocks": 3, "channels": (32, 32, 32), "gating": True}
+    ).fit(X, y)
+    assert clf.predict_proba(X).shape == (32, 2)
+
+
+def test_tr_reject_random_state_none_at_fit():
+    X, y = _make_xy(n=32, seed=2)
+    assert DLinearTrendPlusTCNResidualFusion().random_state is None
+    with pytest.raises(ValueError, match="random_state"):
+        DLinearTrendPlusTCNResidualFusion().fit(X, y)
+
+
+def test_tr_reject_nested_random_state():
+    with pytest.raises(ValueError, match="random_state"):
+        DLinearTrendPlusTCNResidualFusion(tcn_config={"random_state": 5})
+
+
+def test_tr_reject_predict_before_fit():
+    X, _ = _make_xy(n=10, seed=2)
+    with pytest.raises(RuntimeError, match="before fit"):
+        _mk_tr(random_state=0).predict_proba(X)
+
+
+def test_tr_reject_predict_shape_drift():
+    X, y = _make_xy(n=32, c=2, seed=2)
+    clf = _mk_tr(random_state=0).fit(X, y)
+    X_bad, _ = _make_xy(n=5, c=3, seed=2)
+    with pytest.raises(ValueError, match="differs from the fitted"):
+        clf.predict_proba(X_bad)
+
+
+def test_tr_reject_tcn_training_kwargs():
+    # tcn_config is residual-branch architecture only; training kwargs belong on
+    # the fusion class itself (Codex slice-3 P2 — reject, don't silently ignore).
+    with pytest.raises(ValueError, match="architecture axes only"):
+        DLinearTrendPlusTCNResidualFusion(tcn_config={"max_epochs": 3})
+
+
+def test_tr_causal_moving_average_formula():
+    # Lock the trailing/left-pad causal MA formula incl. the first pad timesteps
+    # (Codex slice-3 P3): kernel 5, left-replicate of x0.
+    import torch
+
+    from intraday_research.models.deep_sequence.fusion import _TrendResidualModule
+
+    tcn_module = TCNClassifier(num_blocks=2, channels=(16, 16))._build_module(
+        window_size=5, n_features=1
+    )
+    mod = _TrendResidualModule(
+        window_size=5, n_features=1, ma_kernel=5, tcn_module=tcn_module
+    )
+    x = torch.tensor([[[0.0], [1.0], [2.0], [3.0], [4.0]]])  # (1, 5, 1)
+    trend = mod._causal_moving_average(x).squeeze().tolist()
+    assert trend == pytest.approx([0.0, 0.2, 0.6, 1.2, 2.0])
